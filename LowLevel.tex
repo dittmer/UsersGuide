@@ -1,0 +1,27 @@
+% Low level commands
+
+In addition to the complex sequences of commands issued by the
+high-level configuration procedure, a number of low-level commands are
+available to the user through the GUIs of the various
+Supervisors. These can be useful for expert-level problem
+solving. These are described in this section.
+
+\subsection{Resets}
+
+\begin{itemize}
+\item ResetROC: sent via the TTC. Availabe as a button in the PixelSupervisor GUI. Implemented and verified to work.
+\item ResetTBM: sent via the TTC. Availabe as a button in the PixelSupervisor GUI. Implemented and verified to work.
+\item ResetCCU: causes the TKFECSupervisors to issue the command {\tt resetPlxFec()}. Availabe as a button in the PixelSupervisor GUI. Implemented. Sends resetPlxFec via the FecSoftware.
+\item PIA resets: a menu of resets available from the PixekTKFECSupervisor GUI, implemented by passing a value to the FecSoftware command {\tt testPIAResetfunctions}
+\begin{itemize}
+\item roc: value = 0x1
+\item aoh: value = 0x2
+\item doh: value = 0x4
+\item res1: value = 0x8
+\item res2: value = 0x10
+\item fpixroc: value = 0x2A (bits 1, 3, and 5); this resets the TBM and ROCs
+\item fpixdevice: value = 0x15 (bits 0, 2, and 4); this resets the portcard devices (Delay25, DOH, AOH, DCU)
+\end{itemize}
+The PIA resets are hard resets using hardware lines. In the FPix they go from the CCU parallel output lines to reset lines on the portcard. One is fanned out to all the portcard devices. The other is routed to the TBM and ROCs through the adapter board.\footnote{https://hypernews.cern.ch/HyperNews/CMS/get/pixelOnlineSW/1155/1/1.html}
+\end{itemize}
+

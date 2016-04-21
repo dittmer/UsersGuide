@@ -1,0 +1,97 @@
+% Outstanding tasks and improvements
+
+I will divide these task into three different categories.
+The first is algorithm/calibration development. The second
+is 'operations', the third is code improvements.
+
+\subsection{Calibration development}
+\begin{itemize}
+\item Implement algorithm for time walk. Some of the tools are
+      available. Need to understand how to analyze the data
+      and set parameters.
+\item Adjust AOH gain setting. Need to discuss a strategy for this.
+\item Need to fix the delay25 calibration; it wraps around.
+\item Linearity adjustment. Steve started to look at Vsf and Vhlddel.
+\item Adjust the ROC analog signal offset and gain. Want to keep the
+      lowest level well above UB, and the maximum near 255 (or 1024).
+\item In the address level determination if the highest level hit 1023 it 
+      will not be detected. Should allow this.
+\end{itemize}
+
+\subsection{Operation improvements}
+
+\begin{itemize}
+\item Migrate calibration algorithms to use root objects, like
+      histograms. This will allow us to write out root files
+      with the calibration results as well as monitoring
+      the progress of calibrations.
+\item Tools to view the calibration results should be 
+      migrated to look at root files.
+\item Deploy database. 
+\item Use filebased interface and aliases to nor write over 
+      old files. This is basically done. But should modify the
+      writing of files so that all files in the configuration
+      is written out again. Otherwise it will be to hard to used.
+      This is not very complicated, but not sure what is the 
+      best strategy.
+\item Deploy the error logger to make sure that we send relevant
+      and not to verbose messages.
+\item Have to run with the FEDSpySupervisor.
+\item Run with the power-on sequence. This is work in progress
+      now and a first try will take place during the week of 
+      Jan. 28, 2008.
+\item We should properly initialize the CCU. 
+\item We should try out the schemes for reconfiguring a CCU ring
+      to drop a CCU.
+\item Is it possible that we can program ROCs on one panel, or blade,
+      such that we can burn the fuse on the adapter board?
+\item We have to try out the 'popcon' feature for calibrations.
+\item Embed the 'private' words in the FED data. Have code example
+      now from Will. Need to modify the rawToDigi code to unpack
+      this information.
+\end{itemize}
+
+\subsection{Code improvements}
+
+\begin{itemize}
+\item Move DCU readout workloop to configure transition.
+\item Calibration algorithms should run on separate threads.
+      This is mostly implemented now. Some calibrations 
+      still need to migrate to executing the calibration
+      in 'steps', and not just as on call. 
+\item should use dynamic cast instead of static cast.
+\item Further cleanup in calibrations. A number of the
+      calibrations contains a large amount of duplication.
+\item Some code like the FEDInterface and FEDCard is too verbose.
+      Need to review printouts.
+\item There are some exceptions we need to catch. For example
+      if we try to talk to a non-existing FED base address we
+      should catch the exception and not just crash.
+\item Should the supervisor applications be self updating like
+      the trigger supervisor applications? This would then allow
+      to automatically update progress status during a calibration
+      and handle when a calibration is complete.
+\item The ROC status should be respected. This would, e.g., allow
+      us to not generate a failed calibraton when one of the
+      ROCs can't generate hits.
+\item More consistency checking needed; in particular for the AOH
+      initialization. Should only initialize portcards that are
+      used.
+\item When calibration complete the event processing the FED Supervisor
+      displays the page that indicates that the calibration is done
+      while the FED is still doing the endCalibration processing.
+\end{itemize}
+
+
+
+\clearpage
+
+\bibliographystyle{unsrt}
+\bibliography{UsersGuide}
+
+
+
+\end{document}
+
+
+

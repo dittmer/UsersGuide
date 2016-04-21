@@ -1,0 +1,141 @@
+% Calibration organization
+
+The calibrations all share a similar format.
+\begin{itemize}
+\item The PixelSupervisor controls a loop over 'events' and coordinates
+      the activity of the FED, FEC, TKFEC, and TTC supervisors.
+\item Each calibration needs to do some initialization before processing
+      the event data.
+\item During event processing data is acquired and processed.
+\item After all event data is taken it is analyzed and the results are
+      saved.
+\end{itemize}
+This section will describe a {\it proposal} for how to formalize this process.
+A first step in this this direction was taken when the calibration classes
+were broken out from the the PixelSupervisor and the PixelFEDSupervisor.
+This first step was almost trivial as it just copied the code out to
+separate classes. There are a few more changes we should make that will
+allow us to run these jobs in workloops. Among other things, this will 
+allow us to look
+at the progress of the calibrations from the web browser.
+
+\subsection{PixelSupervisor calibration code}
+
+We change the {\tt PixelCalibrationBase} class to have
+the interface below.
+\begin{verbatim}
+class PixelCalibrationBase : public PixelSupervisorConfiguration, 
+	    public SOAPCommander {
+ public:
+
+  PixelCalibrationBase( const PixelSupervisorConfiguration &,
+			   const SOAPCommander& soapCommander  );
+
+  virtual ~PixelCalibrationBase(){};
+
+  virtual void beginCalibration();
+
+  virtual bool calibrationEvent();
+
+  virtual void endCalibration();
+
+ protected:
+  
+  private:
+  
+  // PixelCalibrationBase Constructor
+  PixelCalibrationBase(const SOAPCommander& soapCommander);
+
+};
+\end{verbatim}
+
+The method {\tt begin()} should do any initialization that 
+is needed before processing any triggers. The method {\tt event()}
+is called repeatedly until it returns true, this indicates that
+the calibration has come to an end.
+Then the {\tt end()}
+method is invoked to perform any analysis of the acquired data.
+
+
+More details on what these methods needs to do will be
+discussed below.
+
+
+\subsection{PixelFEDSupervisor calibration code}
+
+Similarly, I suggest a more general structure for the calibration 
+code that runs in the PixelFEDSupervisor.
+
+\begin{verbatim}
+class PixelFEDCalibrationBase : public PixelFEDSupervisorConfiguration, 
+	    public SOAPCommander {
+ public:
+
+  PixelFEDCalibrationBase( const PixelFEDSupervisorConfiguration &,
+			   const SOAPCommander& soapCommander );
+
+  virtual ~PixelFEDCalibrationBase(){};
+
+  virtual xoap::MessageReference beginCalibration(xoap::MessageReference msg);
+
+  virtual xoap::MessageReference calibrationEvent(xoap::MessageReference msg);
+
+  virtual xoap::MessageReference endCalibration(xoap::MessageReference msg);
+
+  //Should really not be here....
+  unsigned int TransparentDataStart (unsigned long *buffer);
+
+
+ protected:
+
+  //SOAPCommander* theSOAPCommander_;
+
+ private:
+
+  // PixelCalibrationBase Constructor should neve be called
+  PixelFEDCalibrationBase(const SOAPCommander& soapCommander);
+
+};
+\end{verbatim}
+
+Again the three methods {\tt beginCalibration()}, 
+{\tt calibrationEvent()}, and {\tt endCalibration()}
+corresponds to the pre calibration data taking, processing of trigger
+and the post data taking analysis respectively. I suggest that
+these methods are bound to soap messages that invokes
+the implemented methods.
+
+In particular we should move the code that sets the mode
+and control registers to the {\tt beginCalibration()} method.
+This will allow us to move out code from the PixelFEDSupervisor
+that is specific to different calibrations. {\it Or we split
+out the mode and control register settings to a new configuration
+object.}
+
+\subsection{Implementation of algorithms}
+
+During the configuration step the {\tt PixelSupervisor} and
+{\tt PixelFEDSupervisor}
+instantiates the Calibration class for the calibration objects.
+When we go to Run the PixelSupervisor invokes the {\tt beginCalibration()}
+method. This method is responsible for sending the {\tt beginCalibration()}
+message to the PixelFEDSupervisors. 
+
+After this the PixelSupervisor should execute the {\tt calibrationEvent()}
+in a workloop until it has completed. Again, the code executed in the
+PixelFEDSupervisor is responsible for calling the appropriate 
+supervisors. This gives the maximal flexibility in the calibration
+algorithm.
+
+Last, the {\tt endCalibration} method in the {\tt PixelSupervisor} is
+invoked to complete the analysis of the collected data and report
+the results.
+
+In addition it would be nice to take out the code from the PixelSupervisor
+and the PixelFEDSupervisor that select the calibration type. One
+way of doing this is to create a 'factory' for calibrations in the 
+PixelCalibrations package. This factory would accept a string from
+the calibration mode and create the calibration object and return
+it to the PixelSupervisor and the PixelFEDSupervisor. Besides
+simplifying the code in these supervisors (they will not need to \#include
+all the calibrations header files) it will also separate out dependencies.

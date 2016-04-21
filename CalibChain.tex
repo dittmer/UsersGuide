@@ -1,0 +1,437 @@
+% Description of higher-level procedures involving one or several calibrations
+
+\subsection{Starting Point}
+The calibrations we run only affect a subset of the detector's many configurable settings.  Many settings are fixed to initial recommendations found in specifications or early studies and will never have to change.  Other settings have stayed fixed so far but may have to change as the detector suffers from radiation damage (as of January 2012, we haven't changed any of these). To obtain good values for the settings that are not calibrated  in this procedure, one should start with an old configuration, perhaps one in the P5 configuration database.  There are also recommendations in the ROC specifications.
+
+\subsection{Basic Signal Properties}
+Before you can optimize the performance of the ROC, you have to adjust the very basic properties of the signal so that the FED can interpret the data. There is a little bit of a bootstrapping problem here because even these calibrations need to start with a somewhat recognizable signal. Sometimes, you will have to do a preliminary calibration of setting ``A'' so that you can calibrate ``B'' before you do the final calibration of ``A''. You may even have to manually tune a setting at the beginning, depending on your starting point.
+
+The usual sequence of calibrations which are run to get good signal properties are:
+
+Delay25
+FEDBaseline
+ClockPhase
+FEDBaseline
+AOHBias
+FEDBaseline
+AOHGain
+FEDBaseline
+
+\subsection{Vana Calibration}
+The Vana calibration procedure described here was developed for the FPix as a way  to calibrate Vana without a measurement of the analog current drawn by an individual ROC. The only measurement of analog current available now that the detector is fully assembled  is the total current drawn from a single power supply, which services more than one-hundred ROCs.  
+
+We calibrate Vana to give a certain timewalk, which we quantify for each ROC with a variable we call  ``the difference in thresholds'', or DT.  The DT of a ROC is defined as the average in-time  threshold minus the average absolute threshold. It quantifies the speed of the amplifiers and therefore the current drawn by the ROC. 
+
+The target value of DT is chosen such that the average analog current per ROC in each power group is near specification ($\sim$25mA). The correct target for DT depends on radiation damage (and temperature?), so we cannot give you a number to target. Instead, you should tune the target based on the analog current reading you have. For reference, we targeted 12 VCal for the FPix in 2009  (at 7.4C and before beam). In 2012, we targeted 8 VCal for the FPix and 13-14 VCal for the BPix, depending on the power group (and settled on value $\sim$1 VCal higher due to rounding).  
+ 
+The Vana calibration is an iterative procedure. Several of the calibrations described in the previous section and a standalone analysis tool are used in each iteration.
+
+{\bf Before beginning the iterative part of the procedure}, you should do a VcThrCalibration targeting
+an absolute threshold of 70 VCal.  We choose 70 VCal because it is usually high enough for you
+to avoid the problems associated with the thresholds being too low (failures in VcThrCalibration
+and CalDelCalibration).  If you have these problems
+at 70 VCal, you can do the procedure at 80 VCal instead.
+
+Next, you do iterations of the following list
+\begin{enumerate}
+  \item {\bf CalDelCalibration to 20\%.}  With the Vana and VcThr DACs changing in
+    each iteration, it is important that you recalibrate CalDel.  This ensures that
+    the DT is a comparable quantity from iteration to iteration.
+  \item {\bf SCurve99By3 (two WBCs).}  Take an SCurve run on $\sim$100 pixels/ROC (81 is our
+    usual number) scanning over two WBCs (the in-time one and the one after it, which is
+    smaller by 1 DAC unit).  Run the SCurve analysis on the in-time WBC data 
+    and rename the TrimOutput file 
+    as \verb|TrimDefault.dat|.  Also run the SCurve analysis on the data from both WBCs and
+    rename the TrimOutput file as \verb|TrimDefault_abs.dat|.  
+  \item {\bf Run PixelInTimeVana to produce new dac settings.}  First make sure that 
+    \verb|PixelAnalysisTools/test/src/common/PixelInTimeVana.cc| has \verb|assumeGlobal=false| and the 
+    correct DT targets (with \verb|assumeGlobal=false|, the only thing that matters is the difference between
+    globalThr and the targetInTimeThr variable(s)).  The relationship between a change in Vana 
+    and a change in DT is assumed
+    to be the same for each ROC and is hardcoded in this file.  We found it best to do a few iterations with
+    $\Delta DT / \Delta Vana = 1$ and then change to it to $2$ to avoid overshooting.
+    The code must be compiled by doing `make' in \verb|PixelAnalysisTools/test|.  
+    Run it by doing \verb|./bin/linux/x86/PixelInTimeVana.exe <key> <run number> > mylog.dat|. 
+    Keeping the 
+    log file is worthwhile because it allows you to watch the size of the corrections in each
+    iteration to see if you are converging.  The program will produce new dac files for the ROCs you ran on.
+    Copy the Default dacs to a new version, copy these files in, and make this new version the new Default.
+\end{enumerate}
+We have done as many as $\sim$ 20 iterations to get final values.  The final distribution of \verb|deltaVana|
+was $\sim 0.5$ with no DTs more than a few VCal away from the target.  This can be very time-consuming.
+
+Some scripts we have used to plot the $\Delta Vana$ distribution, currents, and other things are in
+TriDAS/pixel/PixelAnalysisTools/test/additionalTools/VanaTools.
+
+{\bf Note:} The first incarnation of the iterative part of the Vana calibration was slightly different.
+We found that it worked well for the vast majority of ROCs, but prevented some ROCs from 
+converging (at least in 2012).  The first incarnation was used in 2009 and the beginning of the 2012 
+recalibration.  We include a description of it here just in case it is useful.
+We have never done a Vana calibration using
+only the second incarnation described above, simply because it was invented during 
+the most recent calibration of the detector. 
+
+In this first incarnation, we assumed that the absolute threshold of each ROC was equal
+to the target of the VcThrCalibration rather than using a measurement of the mean absolute threshold
+provided by an SCurve calibration.  The ROCs that had problems converging were ROCs for which this assumption 
+was not very good (this can happen since the VcThrCalibration uses only a few pixels and is therefore 
+more sensitive to the trimming).
+
+Here is the first incarnation of the iterative part:
+\begin{enumerate}
+  \item VcThrCalibration to 70 Vcal to reset the absolute thresholds (since not measured!)
+  \item CalDelCalibration to 20\%
+  \item SCurve99By3 to measure in time threshold only
+  \item Run PixelInTimeVana with \verb|assumeGlobal=true| to produce new dac settings
+\end{enumerate}
+
+\subsection{Threshold Minimization}
+
+The goal of the threshold minimization is to lower the thresholds on each ROC
+to just above the point it starts failing. Failure is identified using SCurve
+and PixelAlive runs. 
+To change the threshold in this procedure
+we only use VcThr, which shifts all of the thresholds on the ROC coherently.  
+Raising VcThr lowers the thresholds.
+
+If you are calibrating a test stand and are not concerned with optimizing
+the thresholds, you can just run a VcThrCalibration to 60 or 70 Vcal and skip
+the rest of this section.  This will save you a lot of time.
+
+Begin the procedure by doing a VcThrCalibration to 50 VCal.  The vast majority of
+ROCs should work at this threshold (less than 10 out of all 15k should fail).  This gives
+you the starting point for the VcThr setting of each ROC.
+The few ROCs that fail at this setting will have to have their threshold manually raised.
+
+Next, take SCurve runs with VcThr shifted for all ROCs by -20, 0, +2, +4, +6, +8,
++10, +12, +14, and +16.  This can be done very easily using the \verb|SetRelative| option
+of the \verb|calib.dat| file, as shown in the example file below.  When the thresholds
+are lowered, the digital current will increase significantly, 
+causing the temperature to increase.  When we ran at VcThr+16, the temperaturse
+increased so much that the automatic baseline correction went outside 
+of the acceptable range (150).
+We therefore prepared a special dac file for this run where ROCs that had already
+failed were kept at their nominal threshold (aka VcThr+0) while the rest were changed
+to VcThr+16. 
+
+\verb|calib.dat| file for SCurve with shifted VcThr:
+\begin{verbatim}
+Mode: SCurve
+Rows:
+ 0 |  9 |
+18 | 27 |
+36 | 45 |
+54 | 63 |
+72
+Cols:
+3  16 29 | 42 4  17 |
+30 43 5
+VcalLow
+Scan: Vcal 10 120 1
+Scan: WBC 155 156 1
+SetRelative: VcThr -20
+Repeat:
+20
+ToCalibrate:
+all
+\end{verbatim}
+
+You should now have SCurve data for VcThr-20, 0, +2, +4, +6, +8, +10, +12, +14, and +16.
+Proceed by analyzing the data using the usual PixelAnalysisTools to get the absolute thresholds
+(so analyze both WBCs).  Analyze the FPix and the BPix separately to produce one root file
+for each.  The root files are used in the following steps.
+
+Now, go to the TriDAS/pixel/PixelAnalysisTools/test/additionalTools/
+ directory.  You will make use of several ROOT macros and perl 
+scripts in this directory.  
+
+First, look at the VcThr-20 run.  This run was taken at a high threshold where
+there should really be no problems due to thresholds being too low, so you can use it
+to determine how many pixels on each ROC out of the 81 you injected with charge are working.
+To do this, run SCurveLoop\_BPix.C and SCurveLoop\_FPix.C 
+on the VcThr-20 ROOT files with some special options set: 
+\verb|PRINT=0|, \verb|print=1|, \verb|plot=0|, \verb|hold=0|, \verb|useBase=0|. 
+Also, make sure to change \verb|fFile| 
+to the correct root file and \verb|out_name| to something that indicates 
+which run it is (e.g. ``minus20'').  Run by doing \verb|root -l -b -q SCurveLoop\_FPix.C|.
+
+You should now have two ``...\_print.dat'' files (one for FPix and one for BPix) 
+that contain the number pixels to expect from each ROC.  
+Change \verb|printedFile| in SCurveLoop\_BPix(FPix).C to open the BPix(FPix) file
+and set the following options:
+\verb|PRINT=0|, \verb|print=0|, \verb|plot=0|, \verb|hold=0|, \verb|useBase=1|.
+Now when the macros are run, the number pixels expected from a ROC will be
+taken from the VcThr-20 run.
+
+Now run SCurveLoop\_BPix(FPix).C on the remaining SCurve runs (VcThr+0,2,4,6,8,10,12,14,16).
+Remember to change \verb|out_name| and \verb|fFile| for each run.
+Combine the FPix and BPix ``...\_fail.dat'' files for each run by doing e.g. 
+\verb|cat plus6_BPIX_fail.dat plus6_FPIX_fail.dat > plus6_fail.dat|.
+
+
+Create a copy of the Default dacs.  Use the changeSome.pl script to shift
+the VcThr of every ROC included in the configuration (so, not noInit or noAnalogSignal ROCs)
+by +14 (two units less than the farthest you went, as a safety margin).  
+iterate.pl will tell you how much the thresholds of each ROC must be raised
+away from these settings in order for them to be above their failure point.  First change
+the input files in iterate.pl to the ``...\_fail.dat'' files you just created.  Then
+run it by doing ``perl iterate.pl'' (sorry the code is so ugly -- this was Ben's first perl script). 
+This will create lists of ROCs grouped by the
+required VcThr shift.  The lists are put into text files with names the indicate 
+the required VcThr shift.  For example, \verb|sub6.dat| contains the list of ROCs that
+must have 6 subtracted from their VcThr value.  Use changeSome.pl with all of these ``subX.dat''
+files to apply all of the necessary shifts.
+
+You now have a the first guess at the minimized thresholds.  You should now rerun
+an SCurve with the new VcThr values (and no shift).  Some ROCs will fail even though
+according to the runs you took earlier they should pass (I guess this is because the 
+ROCs are not fully independent from one another... or they are unstable near the failing point).
+Analyze the SCurve using SCurveLoop\_BPix(FPix).C and correct any ROCs that fail (i.e. that 
+are listed in the ``...\_fail.dat'' files).  To correct them, I recommend shifting their
+VcThr value by -4.  Repeat this until everything passes. 
+
+Next, you can try running on a different subset of pixels (it's best to
+shift at least the double columns used) to make sure all the ROCs
+still pass.  You'll have to run at VcThr-20 again to make a new ``useBase'' file.
+You may find a few ROCs fail because just one or two pixels within the ROC barely
+fail the min pixel threshold cut.  This is just because they are in the tail of the 
+distribution and is not an indication of the threshold being too low.  You can 
+correct their VcThr by -4, but I wouldn't recommend doing this for more and more
+subsets if this is the only kind of failure you see.  Obviously you should correct
+any ROC that fails in a more serious way.
+
+Now do a second round of tests using the PixelAlive calibration.  Take 
+PixelAlive runs using the \verb|calib.dat| file below and look for 
+any signs of thresholds being too low.  Correct the VcThr of any 
+ROC that shows these signs and repeat.  Some examples of signs
+of thresholds being too low are shown HERE. You can compare the 
+efficiency map to that from a run taken at VcThr-20 using the 
+\verb|SetRelative| option if you are not sure if 
+an inefficiency is due to the threshold being too low or
+e.g. a broken double column that will appear with any VcThr.
+
+
+After a tedious day or two of repeating these SCurve and PixelAlive
+runs with manual corrections being made after each one, you should
+finally reach a point where every ROC reliably passes.  If you
+find that many ROCs are not acting reliably (passing in one run
+and then failing in the next even though the settings are the same),
+consider shifting every ROC's VcThr by an additional -2 to save yourself 
+some time.  We did this to the BPix in 2012.
+
+
+\begin{verbatim}
+Mode: PixelAlive
+Parameters:
+ROCReset        yes
+ScanMode        default
+Rows:
+0 |
+16 |
+32 |
+48 |
+64 |
+1 |
+17 |
+33 |
+49 |
+65 |
+...
+79
+Cols:
+0 |
+13 |
+26 |
+39 |
+1 |
+14 |
+27 |
+40 |
+...
+51 
+VcalLow
+Set: Vcal 150
+Repeat:
+10
+ToCalibrate:
++
+ all
+\end{verbatim}
+{\bf Note:} The ``...'' are just to save paper -- you should use every pixel.  
+You should use the Default masks with this one
+(to have whatever is in Physics in and have 
+noisy pixels masked)!  VCal 150 was carefully chosen to be
+above the threshold of all pixels without being so large
+that it adds unnecessary cross-talk in the charge injection.
+
+\subsection{Pulse Height Optimizations}
+
+
+\subsubsection{Vsf}
+
+Here is the \verb|calib.dat| file we use at P5:
+\begin{verbatim}
+Mode:  VsfAndVHldDel
+Rows:
+3 12
+Cols:
+14
+VcalLow
+Scan: Vsf     0 255 3    mix
+Scan: VHldDel 0 255 255
+Set: Vcal 150
+Repeat: 10
+ToCalibrate:
+all
+\end{verbatim}
+
+{\bf Tip:} If a ROC fails, it may be because it's threshold is too low.  Decrease VcThr by 5-10 units and try again.
+
+\subsubsection{VHldDel}
+
+Here is the \verb|calib.dat| file we use at P5:
+\begin{verbatim}
+Mode:  VsfAndVHldDel
+Rows:
+12
+Cols:
+14 25
+VcalLow
+Scan: VHldDel 0 255 5
+Set: Vcal 250
+Repeat: 40
+ToCalibrate:
+all
+\end{verbatim}
+
+Note that the value the calibration chooses depends somewhat on the VCal used.  THe value of 250 (low scale) has been used for a long time
+and seems to work well enough.
+
+\subsubsection{PHRange}
+
+Here is the \verb|calib.dat| file we use at P5:
+\begin{verbatim}
+Mode:  PHRange
+Parameters:
+minPH 70
+maxPH 235
+Rows:
+12
+Cols:
+14 25
+VcalHigh
+Scan: VIbias_PH 0 200 10
+Scan: VOffsetOp 0 150 5
+Scan: Vcal 17 167 150
+Repeat: 4
+ToCalibrate:
+all
+\end{verbatim}
+
+{\bf Tip:} If a ROC fails this calibration, it may be because the range of the scan is not wide enough. 
+ We try to keep the scan narrow and with only a few points because this calibration uses a lot of memory for some reason.
+
+
+\subsubsection{Gain Calibration}
+
+The last step is to take a gain calibration.  We usually take a short one on a subset of pixels to verify
+that everything is okay before doing the final one on all pixels that takes more than six hours.
+
+The main purpose of taking the short version is to verify that the PH range calibration did its job.
+To do this, open up the resulting root file and look at the histogram called ADCOfAllPixelsSummary.  
+This is a histogram
+of all of the ADC values obtained from all hits on all ROCs in the calibration.  Make the y-axis
+log-scale and confirm that there are no entries at zero or the maximum.  If there are, it means that
+one or more ROCs is outside the range of the FED's ADC. You can run GainLoop.C in 
+TriDAS/pixel/PixelAnalysisTools/test/additionalTools
+to find out which ROCs are responsible.  You will have to redo the PHRange calibration of those ROCs.
+
+The full gain calibration is analyzed by the offline group and put into the data reconstruction.
+
+
+Here is the \verb|calib.dat| file we use at P5 for the short gain calibration:
+\begin{verbatim}
+Mode: GainCalibration
+Rows:
+ 0 |  9 |
+18 | 27 |
+36 | 45 |
+54 | 63 |
+72
+Cols:
+0  13 26 | 39 1  14 |
+27 40 2
+VcalHigh
+ScanValues: Vcal 2 4 6 8 10 12 14 15 16 17 18 21 24 28 35 42 49 56 63 70 77 84 91 98 105 112 119 126 133 140 160 -1
+Scan: WBC 155 156 1
+Repeat:
+5
+ToCalibrate:
+all
+\end{verbatim}
+
+Here is the \verb|calib.dat| file we use at P5 for the full gain calibration:
+\begin{verbatim}
+Mode: GainCalibration
+Rows:
+ 0 |  1 |  2 |  3 |  4 |  5 |  6 |  7 |  8 |  9 |
+10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 |
+20 | 21 | 22 | 23 | 24 | 25 | 26 | 27 | 28 | 29 |
+30 | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 |
+40 | 41 | 42 | 43 | 44 | 45 | 46 | 47 | 48 | 49 |
+50 | 51 | 52 | 53 | 54 | 55 | 56 | 57 | 58 | 59 |
+60 | 61 | 62 | 63 | 64 | 65 | 66 | 67 | 68 | 69 |
+70 | 71 | 72 | 73 | 74 | 75 | 76 | 77 | 78 | 79
+Cols:
+0  13 26 | 39 1  14 | 
+27 40 2  | 15 28 41 |
+3  16 29 | 42 4  17 | 
+30 43 5  | 18 31 44 |
+6  19 32 | 45 7  20 | 
+33 46 8  | 21 34 47 |
+9  22 35 | 48 10 23 | 
+36 49 11 | 24 37 50 |
+12 25 38 | 51
+VcalHigh
+ScanValues: Vcal 6 8 10 12 14 15 16 17 18 21 24 28 35 42 49 56 63 70 77 84 91 98 105 112 119 126 133 140 160 -1
+Repeat:
+5
+ToCalibrate:
+all
+\end{verbatim}
+
+
+\subsection{Final Trimming}
+
+The BPix group determined optimal trimbit settings for their detector before beam and since then have used
+measurements of Vtrim vs temperature to maintain a well-trimmed detector.  There are no
+such measurements for the FPix ROCs, so we redo the full FPix trimming when recalibrating the detector.
+We have developed a relatively fast trimming procedure.
+
+The main purpose of the trimming is to make all of the thresholds within one ROC the same.  
+This is important for the Vana calibration because we assume that the average threshold 
+is a meaningful quantity.  It is also important in the ROC-based threshold minimization.
+Our trimming algorithm makes all of the thresholds across the detector the same, and as a consequence,
+ achieves the desired goal of making the thresholds within each ROC the same.
+
+Begin by taking a VcThrCalibration with a target of 80 Vcal.  We choose 80 Vcal because it is high
+enough to avoid problems associated with thresholds being too low.  70 Vcal would also work, I think.
+Take an SCurve99By3 run to measure the in-time threshold and set the target threshold in PixelTrim.cc and
+PixelTrimBits.cc to the mean in-time threshold (this way you don't waste time shifting your distribution and
+just spend time narrowing it).
+
+Take iterations of the procedure described in Sec. \ref{sec:trimmingShort} until the
+RMS of the thresholds seen in a TrimDefaultShort run is less than $\sim 1.5$ VCal. Each iteration takes
+about one and a half hours on the FPix. Then complete the
+full trimbit determination as described in Sec. \ref{sec:trimbits}.  The long TrimDefault run
+takes about 8 hours on the FPix.
+
+Note that the SCurves in the section are only taken with the in-time WBC, so we are trimming
+the in-time threshold.  BPix trimmed the absolute threshold.  Either way is fine.  
+
+\subsection{Weekly Calibrations}
+
+\subsection{After hardware changes} 
+If the fibers have been moved, the AOH and FED Channel Mapping calibration can be run
+to confirm that the mapping is correct.  
+

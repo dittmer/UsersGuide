@@ -1,0 +1,48 @@
+
+% Procedures to follow after replacing hardware
+
+This section documents the procedures that are to be followed
+when off detector hardware components are replaced that 
+affects the online software and calibrations. {\it This 
+section is not complete!}
+
+\subsection{FED board}
+
+As the FED decodes the analog levels it will be required to
+redo several calibrations to check the optical connections
+after replacing a FED. The FED firmware version has to
+be validated.
+The following calibrations should be run
+\begin{itemize}
+\item FED baseline
+\item AOH gain
+\item AOH bias
+\item FED baseline (it is possible that the previous three steps
+          has to be repeated.)
+\item FEC clock and phase
+\item TBM UB
+\item ROC UB
+\item Address level
+\end{itemize}
+
+\subsection{Pixel FEC including mFECs}
+
+ No calibrations should be affected by replacing a FEC board
+or a mFEC --- in principle. However, we have seen that the 
+size of the window for good communication changes a little
+between different mFECs. This seems mostly to affect the 
+return data and this check is now disabled for both FPix
+and BPix. It is probably prudent to rerun a Delay25 calibration
+to check that after reconnecting the fibers we have the expected 
+performance.
+
+Need to verify that the right firmware is installed. I assume
+that we manage to connect the fibers in the right slot.
+
+\subsection{TKFEC}
+
+ No calibrations should be affected by replacing a TKFEC board.
+
+Need to verify that the right firmware is installed. I assume
+that we manage to connect the fibers in the right slot.
+
