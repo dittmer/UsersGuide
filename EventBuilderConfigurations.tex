@@ -1,0 +1,37 @@
+% Event builder configurations
+
+We do not want to build complete events on one node; rather we want to
+make sure that the event fractions from each FED is always shipped to
+the same filter unit.
+
+To accomplish this the network fabric of the event 
+builder will need to be reconfigured for each pixel
+calibration run. Note that this is likely to be done
+between each LHC fill. (This does not mean that we
+will determine all constants at this rate, but that
+we will want to monitor quantities such as address
+levels frequently.)
+
+Freya Blekman has developed the algorithms that analyze 
+the pixel raw data for the purpose of doing gain calibrations,
+pixel alive, and Scurves. Initially this work is 
+done using data recorded in plain files. To progress
+towards the final goal we should first try to run this
+with a filter unit that is fed data from a source
+that reads files. This will allow us to test and develop
+the application in the form it will run in the HLT. The
+second step is to actually run this with data produced 
+from a FED. This can be either real data of playback 
+generated in a DAQ test stand. We have discussed this 
+with Franz Meier. Freya will follow up on this in
+August and September.
+
+One important question to settle here is if we can generate
+the triggers we need for this using our LTC. 
+
+We should also test and deploy code so that we can take 
+data using local DAQ (VME) and send it out to an event builder.
+Jim Hunt wrote some of this code. This has not been used
+recently, but we need to deploy this.
+
+

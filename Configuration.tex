@@ -1,0 +1,180 @@
+% Configuration
+
+The configuration of the detector starts with a global key, which
+encodes the set of configuration data that should be used. The
+PixelSupervisor then coordinates the actions of the other
+supervisors. Configuration data must be fetched from files or the
+database, and then the data must be loaded into the detector
+hardware. This happens in several steps that must happen in a
+particular order. The logic governing this process is described below.
+
+\subsection{Configuration Sequence}
+The configuration sequence is listed below.
+\begin{itemize}
+\item PixelSupervisor::Configure
+\begin{itemize}
+\item Translate the configuration alias into the Global Key
+\item Send preConfigure command and Global Key to the PixelFECSupervisors
+\end{itemize}
+\item PixelSupervisor::transitionHaltedToConfiguring
+\begin{itemize}
+\item Fetch other miscellaneous configuration data from the database
+\end{itemize}
+\item PixelSupervisor::stateConfiguring
+\begin{itemize}
+\item Configuration of PixelDCSFSMInterface
+\item (wait for completion)
+\item Parallel configuration of PixelTKFECSupervisors
+\item (wait for completion)
+\item Parallel configuration of PixelFECSupervisors
+\item Parallel configuration of PixelFEDSupervisors
+\item (wait for completion)
+\item Configuration of TTCciControl
+\item Configuration of PixelLTCSupervisor
+\item Configuration of PixelDCStoTrkFECDpInterface
+\end{itemize}
+\end{itemize}
+The list covers the steps visible to the PixelSupervisor. Each
+individual supervisor also has several internal configuration steps
+that are not described here. Also note that the only configuration
+information passed from the PixelSupervisor to the other supervisors
+is the global key. Each supervisor is responsible for fetching its own
+configuration data from the database, based on this global key.
+
+As shown in the list, for several of the configuration steps we must
+wait for them to complete before moving on to the next step. This is
+implemented using objects of type {\tt std::map<instance, state>}
+maintained by the PixelSupervisor. These objects track the state of
+the underlying supervisors\footnote{Note that these objects are useful for more than just configuration, and are always kept updated with the state of each Supervisor}, and are called:
+\begin{verbatim}
+statePixelFECSupervisors_
+statePixelFEDSupervisors_
+statePixelTKFECSupervisors_
+statePixelDCSFSMInterface_
+\end{verbatim}
+
+These are initialized in {\tt PixelSupervisor::Initialize} by actively
+asking each supervisor with a SOAP command ``FSMStateRequest''.
+
+Note that the first step in the configuration after loading the global key is to send it to the FECSupervisors.
+Allow the FECSupervisors cannot begin programming the hardware until later in the configuration sequence, they can
+then begin to immediately fetch configuration data from the database. This step, called preConfiguration, is done
+outside of the finite state machine structure (the PixelFECSupervisors remain in the Halted state even as they do the
+preConfiguration). This step saves considerable time in the configuration process (roughly 25 seconds when configuring
+from the database).
+
+In the {\tt PixelSupervisor::stateConfiguring} method, 
+the PixelSupervisor loops over all
+the PixelTKFECSupervisors, checks the FSM state of each as maintained in
+{\tt statePixelTKFECSupervisors\_}, and if it finds ``Halted'', it tries to
+``Configure'' it and updates the map to read FSM state ``Configuring''. 
+If any of these PixelTKFECSupervisors are not in the ``Configured'' state,
+the ::stateConfiguring function exits. The PixelSupervisor then does nothing until it receives a 
+``FSMStateNotification'' SOAP message from PixelTKFECSupervisor with the message ``Configured''.
+This FSMStateNotification signals the
+PixelSupervisor to make a transition from ``Configuring'' to ``Configuring'',
+thus triggering ::stateConfiguring to run again.
+In this way the PixelTKFECSupervisors configure in parallel, and can take as long as they like to finish configuration.
+
+Once the TKFECSupervisors are done, we can configure the pixel FECs and FEDs in
+parallel. The procedure is similar: if their FSM state is ``Halted'', we give them
+the SOAP message to Configure and set their local map state to
+``Configuring''. And now we can configure the FEDs too in a similar,
+parallel, manner. (Note that we do not return out of the function directly, but rather if we
+detect one of the supervisors to not be in ``Configured'', we
+set a bool called ``proceed'' to false, and this bypasses a large chunk
+of code that configures the LTC and TTC, and transitions the FSM of
+PixelSupervisor to ``Configured''.) Only when all
+FECs and FEDs are configured, then we proceed to configure the TTC \& LTC, and then
+the PixelSupervisor is pushed into the ``Configured'' state.
+
+\subsubsection{Possible modifications to the configuration Sequence}
+
+In principle there is nothing to prevent the TTC and LTC from being
+configured before the other Supervisors. Arguably, this would be more logical, since the trigger source
+should be configured before the other devices are programmed.
+
+\subsection{Configuration steps of the underlying supervisors}
+In this section we give an outline of the steps taken by each supervisor during configuration.
+
+\subsubsection{PixelDCSFSMInterface and PixelDCStoTrkFECDpInterface}
+
+The PixelDCSFSMInterface loads the detector configuration. If it finds
+that an entire ROG is in {\tt noInit} or {\tt noAnalogSignal}, then it
+ignored that ROG when summarizing the power state of that section of
+the detector. Note that initially this was true only for ``noInit'',
+since a ROG marked {\tt noAnalogSignal} will still be configured and
+thus needs LV to be on. This logic was changed to accomodate turning
+on only a small fraction of the HV during the first beam operations.
+
+Note that presently the relationship between detector modules (as
+listed in the detconfig) and DCS ROGs is hard-coded in this class. See
+Sec.~\ref{sec:dcshardcode} for more information.
+
+\subsubsection{PixelTKFECSupervisor}
+
+{\it Need to look through the code to verify this info!}
+\begin{itemize}
+\item Create a FecAccess object and issue a VME bus reset
+\item Issue a resetPlxFec to reset the CCU and portcard devices
+\item Load the portcard configuration data from the database and program the portcard devices (AOH, DOH, Delay25, etc)
+\end{itemize}
+
+Note that in this last step the data is programmed to the hardware in
+the same order that it is provided by the class that loads the data
+from the configuration files or database. That class passes file-based
+data directly, in the same order as it appears in the files. For the
+database, it applies a crude sorting algorithm to put PLL settings
+first, Delay25 settings second, and AOH settings last. Any other
+settings come between the Delay25 and AOH settings.
+
+\subsubsection{PixelFEDSupervisor}
+%a lot of things happen here...ttcrx resets, etc
+%it would be good to desribe this
+
+\subsubsection{PixelFECSupervisor}
+%should note the order of roc programming, tbm resets, etc
+
+
+%could add TTCciControl, LTC
+
+\subsection{Quick reconfiguration for the fine delay scan}
+
+A special ``Reconfiguration'' option is available for changing the
+settings that are directly relevant to the global delay of the
+detector with respect to the trigger and the clock.
+
+\subsubsection{Relevant settings}
+
+The following settings are modified during the reconfiguration process:
+\begin{itemize}
+\item PixelTKFECSupervisor: the SCL, TRG, and SDA registers of the Delay25 chip
+\item PixelFECSupervisor: the WBC DAC setting. Note that in the current implementation, {\bf all} DAC settings are reloaded and reprogrammed during reconfiguration.
+\item PixelFEDSupervisor: the TTCrx delay
+\end{itemize}
+
+\subsubsection{Implementation}
+
+This feature is implemented outside of the normal finite state
+machine. Instead, the PixelSupervisor displays a list of configuration
+aliases when we are in either the Configured state (i.e.\ after
+Configuration is done, but before receiving the Start command) or the
+Paused state. This list of aliases is only shown if we have been
+configured for Physics, and if a special environment variable is
+set. Only aliases that begin with the string ``Physics'' are shown.
+
+The user can then select one of the displayed aliases and click ``Reconfigure''. The reconfiguration process takes about 20 seconds, and when it is finished the global key shown in PixelSupervisor will update to the new value.
+
+\subsubsection{Limitations}
+
+The current implementation has the following limitations:
+
+\begin{itemize}
+\item The alias used for Reconfiguration must have a globaldelay25 object
+defined as part of the configuration. Note that this is stricter than
+the requirement for regular configuration.
+
+\item If the Reconfiguration fails for some reason, then the PixelSupervisor will likely still update the displayed global key. The user should be careful to check the LogReader or log file for an error message.
+
+\end{itemize}
+

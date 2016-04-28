@@ -1,0 +1,62 @@
+% Coding practices
+
+\subsection{Makefile}
+
+The pixel online software is built with a
+Makefile located in each (sub)package. The
+Makefile builds on the xdaq tools. This
+file should ideally be as short as possible
+and use the functionallity in the xdaq package.
+You invoke the Makefile in each package by 
+doing a 'make'. There is also a {\tt clean} target.
+
+In addition to the package level makefiles 
+this is a toplevel makefile in the pixel
+directory. This makefile allow you to build 
+all the xdaq packages using {\tt make Set=pixel}.
+You can also clean all packages using 
+{\tt make Set=pixel clean}.
+
+\subsection{Include files}
+
+Include statements should include the file path 
+starting from the project. For example you should do
+
+\begin{verbatim}
+#include "PixelCalibrations/include/PixelAOHBiasCalibration.h"
+#include "CalibFormats/SiPixelObjects/interface/PixelCalibConfiguration.h"
+\end{verbatim}
+
+\subsection{CVS tags}
+
+We create 'official' tags of the form 'POS\_X\_Y\_Z',
+e.g. 'POS\_2\_4\_5'. For every tag created, starting
+with POS\_2\_5\_0, an entry should be made in the
+file pixel/README that describes briefly the new
+features in the tag.
+
+\subsection{Building RPMs}
+
+The building of RPMs should be straightforward. The
+following steps are required.
+\begin{itemize}
+\item Prepare the code, update the README file, and VERSION file and
+      commit and tag the code. The VERSION file contains the version
+      of the RPM to build.
+\item Invoke 'make Set=pixel rpm' to build RPMs for all pixel online software 
+      packages.
+\item In the {\tt PixelUtilities} directory, invoke 'buildExternalRPMs.sh'
+      to build RPMs for DiagSystem, TTCSoftware, and FecSoftwareV3\_0.
+      At the end of building the external RPMs this script copies
+      all RPMs to \$BUILD\_HOME/RPM\_X.Y.Z-V, where X, Y, Z, and V are
+      the major version, minor version, patch, and build version, 
+      respectively.
+\end{itemize}
+The set of RPMs built can be tested (in the online environment) for
+consistency by invoking the command 'rpm --test -Uvh *.rpm' in the directly
+where all the RPMs are located.
+
+Old RPMs can be cleaned out of the build area using the command 'make Set=pixel cleanrpm'.
+
+\clearpage
+

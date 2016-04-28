@@ -1,0 +1,138 @@
+% Usage of configuration data in xdaq applications
+
+This section contains a brief description of how the configuration data 
+objects are used. 
+
+First we look at the PixelSupervisor. RCMS, via the PixelFunctionManager,
+will pass a string for a configuration alias to the PixelSupervisor
+during the configure transition. The PixelSupervisor gets the configuration
+alias and looks up the corresponding configuration key:
+\begin{verbatim}
+  std::string alias=parametersReceived[0].value_;
+  unsigned int globalKey=PixelConfigDB::getAliases_map().find(alias)->second;
+  theGlobalKey_=new PixelConfigKey(globalKey);
+\end{verbatim}
+{\it This code should be fixed so that it catches if the alias does
+not exist. This can be an assert, as the choices for the alias are
+listed from the same map and not being able to find it is an internal
+error.}
+
+Having obtained the configuration key this is what is used to extract
+configuration data. For example the PixelSupervisor extracts some
+objects:
+\begin{verbatim}
+  PixelConfigDB::get(theCalibObject_, "pixel/calib/", *theGlobalKey_);
+  PixelConfigDB::get(theDetectorConfiguration_, "pixel/detconfig/", *theGlobalKey_);
+\end{verbatim}
+The get method returns a pointer that the PixelSupervisor is responsible
+for deleting.
+
+When the PixelSupervisor asks the other supervisors to configure it does
+this by passing the configuration key, not the alias, to them. This
+guarantees that the configuration used by the different supervisors 
+is consistent. We only need to retain the configuration key as a record
+of how the detector was configured.
+
+Inside the PixelFECSupervisor in the configuration method we have code 
+like
+
+{\it Note that this code snippet is a bit out of date, although the idea remains the same.}
+\begin{verbatim}
+  PixelConfigDB::get(theNameTranslation_, "pixel/nametranslation/", *theGlobalKey_);
+  assert(theNameTranslation_!=0);
+
+  PixelConfigDB::get(theDetectorConfiguration_, "pixel/detconfig/", *theGlobalKey_);
+  assert(theDetectorConfiguration_!=0);
+
+  PixelConfigDB::get(theFECConfiguration_, "pixel/fecconfig/", *theGlobalKey_);
+  assert(theFECConfiguration_!=0);
+  assert(theFECConfiguration_->getNFECBoards()==1); //FIXME
+
+  PixelConfigDB::get(theCalibObject_, "pixel/calib/", *theGlobalKey_);
+  calibStateCounter_=0;
+
+  // Loop over all modules in the Detector Configuration and instantiate FECInterfaces required in this crate.
+  // Download TBM, DAC, Masks and Trim settings into hardware.
+  std::vector <PixelModuleName>::iterator module_name = theDetectorConfiguration_->getModuleList().begin();
+  for (;module_name!=theDetectorConfiguration_->getModuleList().end();++module_name)
+ {
+   diagService_->reportError("Congiguring module=" + module_name->modulename(),DIAGDEBUG);
+   const PixelHdwAddress* module_hdwaddress=theNameTranslation_->getHdwAddress(*module_name);
+
+  unsigned int fecnumber=module_hdwaddress->fecnumber();
+  unsigned int feccrate=theFECConfiguration_->crateFromFECNumber(fecnumber);
+  unsigned int fecVMEBaseAddress=theFECConfiguration_->VMEBaseAddressFromFECNumber(fecnumber);
+
+  if (feccrate==crate_){
+    PixelMaskBase *tempMask=0;
+    PixelTrimBase *tempTrims=0;
+    PixelDACSettings *tempDACs=0;
+    PixelTBMSettings *tempTBMs=0;
+    std::string modulePath=(module_name->modulename());
+
+    PixelFECInterface* tempFECInterface=new PixelFECInterface(fecVMEBaseAddress, aBHandle);
+    assert(tempFECInterface!=0);
+    tempFECInterface->setssid(4);
+
+    PixelConfigDB::get(tempMask, "pixel/mask/"+modulePath, *theGlobalKey_);
+    assert(tempMask!=0);
+    theMasks_.insert(make_pair(*module_name, tempMask));
+
+    PixelConfigDB::get(tempTrims, "pixel/trim/"+modulePath, *theGlobalKey_);
+    assert(tempTrims!=0);
+    theTrims_.insert(make_pair(*module_name, tempTrims));
+
+    PixelConfigDB::get(tempDACs, "pixel/dac/"+modulePath, *theGlobalKey_);
+    assert(tempDACs!=0);
+    theDACs_.insert(make_pair(*module_name, tempDACs));
+
+    PixelConfigDB::get(tempTBMs, "pixel/tbm/"+modulePath, *theGlobalKey_);
+    assert(tempTBMs!=0);
+    theTBMs_.insert(make_pair(*module_name, tempTBMs));
+
+    tempDACs->generateConfiguration(tempFECInterface, theNameTranslation_);
+    tempTBMs->generateConfiguration(tempFECInterface, theNameTranslation_);
+    tempTrims->generateConfiguration(tempFECInterface, theNameTranslation_, *tempMask);
+
+    FECInterface[fecVMEBaseAddress]=tempFECInterface;
+  }
+ }
+\end{verbatim}
+
+Similar extractions of the configuration data is used by other
+supervisors. The supervisors cache the data received. In general, configuration data
+is cleared in the halt transition. However, we now hold on to most of the configuration data in the FECSupervisors, and only
+clear it before the next configuration if we see that the value of the global key has changed. In this way, we can avoid reloading
+identical data from the database on the next configuration.
+
+\subsection{Global delay 25 usage}
+
+The global delay 25 does not need to be included in a configuration. Then it
+is simply ignored if the PixelConfigInterface::get call returns a 
+null pointer. However, if it exists in the configuration it has the
+following effects in the different applications:
+
+In the PixelTKFECSupervisor it is checked that we are in a physics
+run and have the global delay 25 settings. If this is the case then
+SCL and TRG are delayed by the delay setting in the global delay 25.
+{\it It is checked in the code if the calculated delay 25 setting is 
+larger than 127. If this is the case then an error message is printed
+and the delay 25 without the global delay is applied. This is a little
+bit dangerous as it is easy to miss such a message. Should think about 
+a safer way of handling this.}
+For the SDA, if the calculated delay25 setting is to large, it allows
+the SDA to wrap around. 
+
+In the PixelFEDSupervisor the a similar logic is applied; if you
+have the global delay 25 and you are taking a physics run then 
+the TTC RX chip adds a delay. This delay is calculated using the 
+method {\tt PixelGlobalDelay25::getTTCrxDelay}.
+
+Comments by Anders: I think that we should modify this code such that
+the global delay25 delay is applied when your run all calibrations
+except for the Delay25 scans. This will allow simpler tests to make
+sure that the delays are properly applied, e.g., by running the 
+address level calibration with different global delay 25 settings.
+
+\clearpage
+

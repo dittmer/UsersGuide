@@ -1,0 +1,492 @@
+% Configuration Database Interface
+
+Since early summer 2006, we have used an interface for accessing
+configuration data in the online software framework. 
+The access was originally file based, and has now (starting in 2009) been
+supplemented with infrastructure to access an Oracle database. The 
+interface used is rather generic and the purpose of this document
+is to write down the interface so that we can have a 
+clear separation between the database code and the applications 
+that use data from the configuration database.
+
+First in Sect.~\ref{sect:cppinterface} we describe the C++ API.
+The interface is defined in the class {\tt PixelConfigInterface}.
+This interface is fully implemented in the {\tt PixelConfigFile}
+implementation based on files.
+
+In Sect.~\ref{sect:cmdline} a simple command line tool is described.
+This tool is implemented through the C++ interface and should work
+both for the file based and the final data base implementation.
+
+Examples below use a few of the configuration data classes that are used. 
+% In Sect.~\ref{sect:configclasses} the full
+% set of classes that are used to configure and control the pixel
+% online software are discussed.
+
+\subsection{C++ Configuration Data Access API}
+\label{sect:cppinterface} 
+
+The class {\tt PixelConfigInterface} in the package 
+{\tt PixelConfigDBInterface} defines the interface for
+access of configuration data. This interface is intended
+to provide type safe access methods for retrieving and
+storing configuration data.
+
+\subsubsection{Retrieving data from the database}
+
+The primary method for retrieving the data is
+\begin{verbatim}
+  template <class T>
+  static void get(T* &pixelObject,
+		  std::string path,
+		  pos::PixelConfigKey key)
+\end{verbatim}
+
+The {\tt PixelConfigKey} is just an integer that holds the top
+level configuration key to be used. 
+This interface returns a pointer to the data. The caller is assumed
+to take ownership of the data and delete it. 
+The path is a 'secondary key'. It would allow us to store more than
+one object of the same type in a given configuration. (In the file
+based implementation this label is used to build the path to were the
+file is stored.)
+Below are a few example of using this interface.
+\begin{verbatim}
+
+  PixelConfigKey theGlobalKey(5);
+
+  PixelNameTranslation *theNameTranslation=0;
+  PixelConfigInterface::get(theNameTranslation, "nametranslation/", 
+                     theGlobalKey);
+
+  PixelDetectorConfig *theDetectorConfiguration=0;
+  PixelConfigInterface::get(theDetectorConfiguration, "detconfig/", 
+                     theGlobalKey);
+
+  PixelFECConfig *theFECConfiguration=0;
+  PixelConfigInterface::get(theFECConfiguration, "fecconfig/", 
+                     theGlobalKey);
+
+\end{verbatim}
+
+These examples show how you extract objects for which there is only one 
+instance of for the
+whole detector configuration. You pass in as the first argument a pointer. The 
+pointer will return 0 if the object was not successfully retrieved.\footnote{We have now tried to improve on this error-handling scheme by throwing a {\tt std::exception} in case there is a failure to retrieve the configuration information. When we attempt to retrieve configuration data in the POS software, we both test for a null pointer and handle any exceptions thrown.} The
+second argument is the label for the object. This is essentially a key that
+is used to look up the data. The interface is type safe, i.e., if you specify 
+a path to an object of the wrong type you will get back a null pointer. The
+third argument is the global configuration key. This basically specifies 
+the versions of all objects used in a given configuration. This key is
+implemented as an integer.
+
+Besides objects like the name translation and detector configuration listed
+above, there are objects such as trim bits, mask bits, and dac values 
+that we need
+to access on a finer granularity than for the whole detector. To do this
+we use slightly modified arguments
+
+\begin{verbatim}
+  PixelDACSettings *tempDACs=0;
+  PixelConfigInterface::get(tempDACs,''pixel/dac/FPix_BpI_D1_BLD1_PNL1'', 
+                     theGlobalKey);
+\end{verbatim}
+
+where we have added to the path the module name for which we want to 
+extract the
+dac settings.
+
+As a given application, for example the PixelFECSupervisor, will need to access
+dac settings for many modules, and it is more efficient to extract
+the data 'in bulk' from the database, we have also added an interface
+that allows extraction of multiple objects at the time
+
+\begin{verbatim}
+  std::map<std::string, PixelDACSettings*> dacs;
+  dacs["pixel/dac/FPix_BpI_D1_BLD1_PNL1"]=0;
+  dacs["pixel/dac/FPix_BpI_D1_BLD1_PNL2"]=0;
+  PixelConfigInterface::get(dacs, theGlobalKey);
+\end{verbatim}
+
+The method will add pointers to the modules; if a module is not
+in the configuration a null pointer is returned.
+
+In addition to the access method that uses the configuration key,
+you can also retrieve data based on the specific version of the
+object
+\begin{verbatim}
+  template <class T>
+  static void get(T* &pixelObject,
+                  std::string path,
+		  unsigned int version)
+\end{verbatim}
+There is also a version that retrieves all the objects
+\begin{verbatim}
+  template <class T>
+  static void get(std::map<std::string, T*> &pixelObjects,
+		  unsigned int version)
+\end{verbatim}
+In general the access based on the configuration key should be used
+in the xdaq applications.
+
+
+\subsubsection{Storing data in the database}
+
+To store data in the configuration database use the following 
+method
+
+\begin{verbatim}
+  template <class T>
+  int PixelConfigInterface::put(const T* ,std::string path);
+\end{verbatim}
+
+This method will install the data in T* using the specified path.
+The new version number is returned by the method.
+If you instead have a set of configuration data that needs to be
+installed you use the interface
+
+\begin{verbatim}
+  template <class T>
+  int PixelConfigInterface::put(std::vector<T*>,
+                                std::string path);
+\end{verbatim}
+
+Where a vector of pairs is passed, the second argument in the
+pair is the sub path used for the object.
+
+\subsubsection{Configuration keys}
+
+A configuration key consists of a set of objects and their versions.
+The simplest form is just to specify a list of the paths and the 
+versions to use in the key
+\begin{verbatim}
+  static unsigned int makeKey(std::vector<
+                              std::pair<std::string, unsigned int> > versions)
+\end{verbatim}
+The method returns the new configuration key.
+
+
+\subsubsection{Alias manipulation}
+
+For configurations aliases you can retrieve the list of defined 
+aliases using
+\begin{verbatim}
+  static std::vector<std::pair<std::string, unsigned int> > getAliases()
+\end{verbatim}
+The string is the name of the alias and the unsigned int is the 
+corresponding key. {\it I think it should actually be a PixelConfigKey.}
+
+A very similar method is
+\begin{verbatim}
+static std::map<std::string, unsigned int> getAliases_map()
+\end{verbatim}
+That returns a map between the alias name and the corresponding key.
+
+The method
+\begin{verbatim}
+static void addAlias(std::string alias, unsigned int key)
+\end{verbatim}
+inserts a new alias. Note that if the alias already exists it will
+just be updated to point to the new key. 
+
+The method below is a lower level method. This method
+allows you to define an alias to a version that has key
+already created and link it to version aliases. This method
+should eventually be removed as it is probably to error prone...
+\begin{verbatim}
+  static void addAlias(std::string alias, 
+                       unsigned int key,
+		       std::vector<std::pair<std::string, std::string> > versionaliases)
+\end{verbatim}
+
+To create an alias for a configuration object use the method.
+\begin{verbatim}
+    static void addVersionAlias(std::string path, 
+                                unsigned int version, 
+                                std::string alias)
+\end{verbatim}
+
+To add an alias for a configuration object, as supposed to a
+configuration key, use
+
+\begin{verbatim}
+  static void addVersionAlias(std::string path,
+                              unsigned int version, 
+                               std::string alias)
+\end{verbatim}
+
+
+To get the actual version that an alias points to use the method
+\begin{verbatim}
+  static unsigned int getVersion(std::string path,
+                                 std::string alias)
+\end{verbatim}
+
+\subsubsection{Support of polymorphism}
+
+The interface should support polymorphism in the sense described
+below. For example, for trim bits it may be convenient to have ways of
+storing the trim bits in different ways. We will need to be able 
+to store trim bits so that we can set them independently for
+each pixel. But there are other cases where we might want to set
+all trim bits the same on a whole ROC, or the same in each 
+double column.
+
+Consider that we have a base class, {\tt PixelTrimBase} and that there
+are the concrete implementations {\tt PixelTrimAll}, {\tt PixelTrimROC},
+and {\tt PixelTrimDCol} which implements the per pixel, per roc, and
+per double column respectively. The interface should support
+operations like
+
+\begin{verbatim}
+  PixelTrimBase *tempTrims=0;
+  PixelConfigInterface::get(tempTrims,"pixel/trim/FPix_BpI_D1_BLD1_PNL1", 
+                     theGlobalKey);
+\end{verbatim}
+
+where after {\tt tempTrims} points to the data type stored in the 
+database for the configuration.
+
+Similarly you should be able to store data
+
+\begin{verbatim}
+  PixelTrimBase *tempTrims=new PixelTrimROC; //probably would not compile as
+                                             //we don't have this constructor.
+  unsigned int ver=PixelConfigInterface::put(tempTrims,"pixel/trim/FPix_BpI_D1_BLD1_PNL1");
+\end{verbatim}
+
+
+
+\subsection{Command line interface to configuration data}
+\label{sect:cmdline}
+
+Based on the interface described above in the C++ interface a simple
+command line tool has been written to allow manipulation of configuration
+data. The functionality of this interface is described below.
+
+\subsubsection{Inserting new data}
+
+Here we will start be discussing how you insert a
+{\tt PixelDetectorConfig} object. There is
+only one such object in the configuration. Assuming that we
+have this in a file named {\tt detconfig.dat}. We now want to
+insert this into the configuration database. This is done with
+
+\begin{verbatim}
+PixelConfigDBCmd.exe --insertData detconfig detectconfig.dat
+\end{verbatim}
+This would install the content of the file {\tt detconfig.dat} 
+under the path {\tt detconfig} by creating a new version.
+This new version is returned by the command so that it is known
+where it was installed. The implementation of this tool
+reads the file to create a {\tt PixelDetectorConfig} object and
+then uses the C++ interface to store the data.
+
+As a variation of this you might want to install, e.g., a new set of 
+DAC settings for the ROCs. As we insist that no data can be 
+changed in the configuration database after it has been loaded
+this implies that the DAC settings for all ROCs needs to be
+loaded at once. To insert that prepare the files that contains the
+ROC dac settings. Then create the file daclist.txt that list all
+the file that you want to install. To install them into the
+database us
+
+\begin{verbatim}
+PixelConfigDBCmd.exe --insertDataSet dac daclist.txt
+\end{verbatim}
+
+Again a new version has been created under the path {\tt dac} and
+all the dac settings have been uploaded. The new version is then
+printed out.
+
+Note that these interfaces are designed to not allow
+you to change any existing data. (We might want to consider allowing
+adding comments to existing versions of configuration data.)
+
+\subsubsection{Retrieving data}
+
+From the command line you can retrieve data using
+\begin{verbatim}
+PixelConfigDBCmd.exe --getVersion nametranslation/ 0
+\end{verbatim}
+This will retrieve the data from version 0 of the nametranslation 
+and write it out as a file.
+
+\subsubsection{Creating new configurations}
+
+So far we have discussed how to add new data to the configuration
+database. The next step is to combine versions of several 
+data types into a configuration. This is done with a command 
+like
+
+\begin{verbatim}
+PixelConfigDBCmd.exe --insertConfigAlias Physics dac 1 detconfig 0 nametranslation 0
+\end{verbatim}
+
+where the versions of the different objects on the paths are 
+listed. This will create a new configuration key. This key will
+be returned by the command. 
+
+Very often we have an existing configuration, {\tt oldKey}, that
+we want to 'update'. Note that update actually means that we will create
+a new configuration. For example you can do
+\begin{verbatim}
+PixelConfigDBCommand --updateConfigAlias 5  tbm 6
+\end{verbatim}
+{\it not yet implemented.} So in the example above a copy of 
+configuration key number 5 would
+be made in which the TBM settings version 6 was added.
+
+If one wants to remove an existing object from a configuration
+we could imagine doing something like
+\begin{verbatim}
+PixelConfigDBCommand --updateConfigAlias 5  calib -1
+\end{verbatim}
+ 
+In both these cases the new configuration key that was created is
+returned. Again this interface guarantees that no existing 
+data has been changed. Only new data has been added.
+
+
+\subsubsection{Alias manipulation}
+
+
+The simplest use case is that we can create an alias that points
+to a specific key. This could e.g. be to point the 'Physics' 
+alias to configuration key 5
+\begin{verbatim}
+PixelConfigDBCommand --insertConfigAlias Physics 5
+\end{verbatim}
+
+But we need to expand on this to make it more manageable
+to handle the configurations.
+
+In addition to have aliases for the toplevel configurations
+we can define aliases for the configuration data versions.
+For example you can define the 'Physics' alias for the TBM settings
+version 4 using
+\begin{verbatim}
+PixelConfigDBCommand --insertVersionAlias tbm 4 Default
+\end{verbatim}
+Very similar to the {\tt --createconfig} from above you
+can also do
+\begin{verbatim}
+PixelConfigDBCommand --insertConfigAlias Physics dac 5 detconfig 3 tbm Physics
+\end{verbatim}
+This will create a new toplevel configuration key and the 
+alias 'Physics' will point to this key. Say that you then also do
+\begin{verbatim}
+PixelConfigDBCommand --insertConfigAlias PhysicsLowLumi dac 4 detconfig 3 tbm Physics
+\end{verbatim}
+We have now  created two aliases to two toplevel keys. Now, if you 
+do
+\begin{verbatim}
+PixelConfigDBCommand --insertVersionAlias tbm 5 Physics
+\end{verbatim}
+this should automatically create two new toplevel configurations
+for 'Physics' and 'PhysicsLowLumi'.
+
+\subsubsection{Use cases}
+
+Below I will give some examples for how we could be using the
+capabilities discussed in the previous two sections. To simplify
+this a little bit I will work with a configuration that only
+has 4 different types of objects (detconfig, tbm, dac, and masks).
+
+The first thing we need to do is to load the configuration data.
+Assume that we do this on a completely empty database.
+
+\begin{verbatim}
+PixelConfigDBCmd.exe --insertData fecconfig fecconfig.dat
+PixelConfigDBCmd.exe --insertData fedconfig fedconfig.dat
+PixelConfigDBCmd.exe --insertData tkfecconfig tkfecconfig.dat
+PixelConfigDBCmd.exe --insertData portcardmap portcardmap.dat
+PixelConfigDBCmd.exe --insertDataSet fedcard fedcardlist.txt
+PixelConfigDBCmd.exe --insertDataSet portcard portcardlist.txt
+PixelConfigDBCmd.exe --insertDataSet tbm tbmlist.txt
+PixelConfigDBCmd.exe --insertDataSet dac daclist.txt
+\end{verbatim}
+So now we have version 0 for each of these objects. Now I can
+create aliases for the different objects.
+
+\begin{verbatim}
+PixelConfigDBCommand --insertVersionAlias detconfig 0 Physics
+PixelConfigDBCommand --insertVersionAlias tbm 0 Default
+PixelConfigDBCommand --insertVersionAlias dac 0 Default
+PixelConfigDBCommand --insertVersionAlias mask 0 Default
+\end{verbatim}
+
+\begin{verbatim}
+PixelConfigDBCommand --insertConfigAlias Physics dac Default detconfig Physics
+tbm Default mask Default
+\end{verbatim}
+
+This command will create the first configuration key, number 0. Now
+say that a new set of dac settings is created and loaded:
+\begin{verbatim}
+PixelConfigDBCommand --insertData dac daclist.txt 
+\end{verbatim}
+This will be version 1 of the dac settings. Next if you make this
+alias the 'Default':
+\begin{verbatim}
+PixelConfigDBCommand --insertVersionAlias dac 1 Default
+\end{verbatim}
+The code will automatically update all toplevel aliases that are
+using this the 'Default' dac settings. In this example it
+means that the top level 'Physics' alias will point to key 1.
+
+
+
+
+\subsection{Managing Configurations}
+
+We need higher level tools to manage configurations. The way we 
+currently have the configurations implemented there are about 
+15 different objects that are needed to build a configuration.
+Two examples of such configurations are:
+
+\begin{verbatim}
+key 0
+detconfig   2
+nametranslation   0
+fedconfig   0
+fecconfig   0
+fedcard   0
+dac   2
+mask   2
+trim   2
+calib   0
+tbm   0
+portcard   0
+portcardmap   0
+ttcciconfig 0
+tkfecconfig 0
+
+key 1
+detconfig   2
+nametranslation   0
+fedconfig   0
+fecconfig   0
+fedcard   0
+dac   2
+mask   2
+trim   2
+calib   8
+tbm   0
+portcard   0
+portcardmap   0
+ttcciconfig 0
+tkfecconfig 0
+\end{verbatim}
+
+For a moment I will not discuss the 'aliases', I will focus just
+on the data organization and the tools needed to manipulate the
+data. The different data types used in the configurations are 
+discussed in Sect.~\ref{sect:configobjects}
+
+
+\subsection{Configuration DB Implementation}
+
+{\it to be added. Stay tuned.}
+
+

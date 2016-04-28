@@ -1,0 +1,954 @@
+% Configuration Objects
+
+This section describes the implementation
+of the configuration objects for the 
+pixel online system. The interface for accessing this data 
+was discussed in the previous section. 
+
+\subsection{Introduction}
+
+Key goals for the design of the configuration
+data object include:
+\begin{itemize}
+\item The configuration has to be fast and reliable.
+      The fewer components, read pieces of software, 
+      involved in the configuration step the more
+      likely the system is to work reliably.
+\item The data volume should be small. I.e. the data
+      has to be packed in an efficient way.
+\item Want to optimize the database access by accessing
+      relatively few, but large, objects. 
+\item Computers are good at manipulating data that is in
+      memory, so the actual commands that are sent to 
+      the hardware can be built on the fly -- assuming that
+      all information to do this is accessible in memory.
+\item The data volume for the whole pixel system is ${\cal O}(100\ {\rm MB})$
+      so holding this in memory in a single computer should
+      not be an issue. In fact this will be spread over
+      more than one computer as the FECs are in more than
+      one crate.
+\end{itemize}
+
+The following classes are used to configure the online pixel
+applications:
+
+\vskip 0.5cm
+\noindent
+{\bf PixelTrimAllPixels}: This class stores the trim bits for the
+                          ROCs on one module. The trims are stored
+                          for each pixel.
+
+\vskip 0.5cm
+\noindent
+{\bf PixelMaskAllPixels}: This class stores the mask bits for the
+                          ROCS on one module. The masks are stored
+                          for each pixel.
+
+\vskip 0.5cm
+\noindent
+{\bf PixelDACSettings}: This class stores the DAC settings for all
+                        ROCs on one module. 
+
+\vskip 0.5cm
+\noindent
+{\bf PixelTBMSettings}: This class stores the TBM settings for one
+                        TBM.
+
+\vskip 0.5cm
+\noindent
+{\bf PixelNameTranslation}: This class translates from the pixel 
+                            naming scheme documents names of ROCs to
+                            the hardware addresses used by both the
+                            FEC and the FED to identify a ROC.
+
+\vskip 0.5cm
+\noindent
+{\bf PixelDetectorConfig}: This class lists the modules used in a 
+                           configuration. The utility of this class
+                           is that it allows one to only use a small
+                           subset of the detector without having to 
+                           create a new name translation.
+
+\vskip 0.5cm
+\noindent
+{\bf PixelROCStatus}: This class keeps track of the status of 
+                      ROCs. The default assumption is that a ROC
+                      is working and this object allows us to 
+                      list ROCs that are not working, or that we 
+                      want to turn off.
+
+\vskip 0.5cm
+\noindent
+{\bf PixelFECConfig}: This class lists the pixel FECs that are used.
+
+\vskip 0.5cm
+\noindent
+{\bf PixelTKFECConfig}: This class lists the tracker FECs that are used.
+
+\vskip 0.5cm
+\noindent
+{\bf PixelFEDConfig}: This class lists the pixel FEDs that are used in
+                      the configuration.
+
+\vskip 0.5cm
+\noindent
+{\bf PixelFEDCard}: This class stores the settings for one FED board.
+
+\vskip 0.5cm
+\noindent
+{\bf PixelPortCard}: This class stores the settings on a portcard, e.g.
+                     the delay25 settings and AOH settings.
+
+\vskip 0.5cm
+\noindent
+{\bf PixelPortcardMap}: This class maps the AOH channels on portcards
+                        to the FED channels.
+
+
+\vskip 0.5cm
+\noindent
+{\bf PixelLTCConfiguration}: This class holds the configuration for the 
+                             pixel LTC module.
+\vskip 0.5cm
+\noindent
+{\bf PixelTTCciConfiguration}: This class holds the configuration for the 
+                               pixel TTCci module.
+
+\vskip 0.5cm
+\noindent
+{\bf PixelCalibConfiguration}: This class specifies how the calibrations
+                               are executed. 
+
+\vskip 0.5cm
+\noindent
+{\bf PixelDelay25Configuration}: This class specifies how the delay25 
+                                 calibration is executed.
+
+\vskip 0.5cm
+
+
+With the exception of {\tt PixelCalibConfiguration} and 
+{\tt PixelDelay25Configuration} the classes above are used to build the
+configuration of the hardware. The last two classes are used to 
+configure the software applications to perform a given 
+calibration.
+
+
+The following sections describe what is implemented, starting with
+a common base class for all configuration objects and then a
+brief discussion of all classes currently implemented.
+
+All configuration objects derive from a common base class called
+{\tt PixelConfigBase}.
+
+\begin{verbatim}
+class PixelConfigBase {
+
+ public:
+
+    //A few things that you should provide
+    //description : purpose of this object
+    //creator : who created this configuration object
+    //date : time/date of creation (should probably not be
+    //       a string, but I have no idea what CMS uses.
+    PixelConfigBase(std::string description,
+		    std::string creator,
+                    std::string date);
+
+    virtual ~PixelConfigBase(){}
+
+    std::string description();
+    std::string creator();
+    std::string date();
+
+    //Interface to write out data to ascii file
+    virtual void writeASCII(std::string dir="") const = 0;
+
+ private:
+
+    std::string description_;
+    std::string creator_;
+    std::string date_;
+     
+
+};
+\end{verbatim}
+
+This class is intended to provide a common interface. Currently it simply
+holds information about when the objects were created. 
+
+
+\subsection{Trim and mask bits}
+
+The trim and mask bits need to be set for each pixel. This
+makes these the largest configuration objects. In terms
+of configuration of the ROC, the mask and trim bits are loaded
+together. However, as the mask bits are used offline we will
+store the trim and mask bits in different objects 
+as this will reduce the data that needs to be downloaded
+to access the mask bits offline. Also, this saves space
+as compared to storing the trim and mask bit for each 
+channel as one byte. It is also likely that we would
+like to update the mask bits without changing the trim bits.
+This would happen for example when we discover a hot pixel
+and want to mask it off. Being able to change only the
+mask bits would then be useful.
+
+For both the mask and trim bits we allow for different implementations.
+For example, we can have one implementation that allows us
+to use different settings for each pixel, or we can have a different
+configuration that uses the same settings for all pixels. The code
+handles this transparently by using inheritance. 
+
+For the mask bits the base class looks like:
+
+\begin{verbatim}
+class PixelMaskBase: public PixelConfigBase {
+
+ public:
+
+    PixelMaskBase(std::string description, 
+		  std::string creator,
+		  std::string date);
+
+    virtual ~PixelMaskBase();
+
+    void setOverride(PixelMaskOverrideBase*);
+
+    virtual const PixelROCMaskBits& getMaskBits(int ROCId) const =0;
+
+    virtual void writeBinary(std::string filename) const =0;
+
+    virtual void writeASCII(std::string filename) const =0;
+
+    friend std::ostream& operator<<(std::ostream& s, const PixelMaskBase& mask);
+
+ private:
+
+    //Hold pointer to the mask override information.
+    PixelMaskOverrideBase* maskOverride_;
+
+
+};
+\end{verbatim}
+
+The concrete implementation that implements mask bits for each
+channel looks like:
+
+\begin{verbatim}
+class PixelMaskAllPixels: public PixelMaskBase {
+
+ public:
+
+    PixelMaskAllPixels(std::string filename);
+
+    void writeBinary(std::string filename) const;
+
+    void writeASCII(std::string filename) const;
+
+    const PixelROCMaskBits& getMaskBits(int ROCId) const;
+
+ private:
+
+    std::vector<PixelROCMaskBits> maskbits_;  
+ 
+};
+
+\end{verbatim}
+
+The file format that we use looks like:
+\begin{verbatim}
+ROC:     FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC1
+col00:   11110000000000000000000000000000000000000000000000000000000000000000000000000000
+col01:   00000000000000000000000000000000000000000000000000000000000000000000000000000000
+col02:   00000000000000000000000000000000000000000000000000000000000000000000000000000000
+.
+.
+.
+col49:   00000000000000000000000000000000000000000000000000000000000000000000000000000000
+col50:   00000000000000000000000000000000000000000000000000000000000000000000000000000000
+col51:   00000000000000000000000000000000000000000000000000000000000000000000000000000000
+ROC:     FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC2
+col00:   10000000000000000000000000000000000000000000000000000000000000000000000000000000
+col01:   20000000000000000000000000000000000000000000000000000000000000000000000000000000
+col02:   30000000000000000000000000000000000000000000000000000000000000000000000000000000
+.
+.
+.
+\end{verbatim}
+Where the file contains the data for each of the ROCs in a module.
+Within each ROC the trim bits are listed for each column by the
+value if the trim bit as one hexadecimal character from 0 to F.
+
+
+Similarly for the trim bits we have the base class:
+
+\begin{verbatim}
+class PixelTrimBase: public PixelConfigBase {
+
+ public:
+
+    PixelTrimBase(std::string description, 
+		  std::string creator,
+		  std::string date);
+
+    virtual ~PixelTrimBase();
+    
+    void setOverride(PixelTrimOverrideBase* trimOverride);
+
+    //Build the commands needed to configure ROCs
+    //on control link
+
+    virtual void generateConfiguration(PixelFECConfigInterface* pixelFEC,
+				       PixelNameTranslation* trans,
+				       const PixelMaskBase& pixelMask) const =0;
+    virtual void writeBinary(std::string filename) const =0;
+
+    virtual void writeASCII(std::string filename) const =0;
+
+    virtual PixelROCTrimBits getTrimBits(int ROCId) const =0;
+
+    friend std::ostream& operator<<(std::ostream& s, const PixelTrimBase& mask);
+
+
+ private:
+
+    PixelTrimOverrideBase* trimOverride_;
+
+};
+\end{verbatim}
+
+And the concrete implementation looks like:
+
+\begin{verbatim}
+class PixelTrimAllPixels: public PixelTrimBase {
+
+ public:
+
+    PixelTrimAllPixels(std::string filename);
+
+    //Build the commands needed to configure ROCs
+    //on control link
+
+    void generateConfiguration(PixelFECConfigInterface* pixelFEC,
+			       PixelNameTranslation* trans,
+			       const PixelMaskBase& pixelMask) const;
+
+    void writeBinary(std::string filename) const;
+
+    void writeASCII(std::string filename) const;
+
+    PixelROCTrimBits getTrimBits(int ROCId) const;
+
+ private:
+
+    std::vector<std::string> rocname_;
+    std::vector<PixelROCTrimBits> trimbits_;
+
+};
+\end{verbatim}
+
+We use basically the same format for the mask bits as we used for the
+trim bits:
+
+\begin{verbatim}
+ROC:    FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC1
+col00:  11111111111111111111111111111111111111111111111111111111111111111111111110000000
+col01:  11111111111111111111111111111111111111111111111111111111111111111111111111111111
+col02:  11111111111111111111111111111111111111111111111111111111111111111111111111111111
+.
+.
+.
+col49:  11111111111111111111111111111111111111111111111111111111111111111111111111111111
+col50:  11111111111111111111111111111111111111111111111111111111111111111111111111111111
+col51:  11111111111111111111111111111111111111111111111111111111111111111111111111111111
+ROC:    FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC2
+col00:  11111111111111111111111111111111111111111111111111111111111111111111111111111111
+col01:  11111111111111111111111111111111111111111111111111111111111111111111111111111111
+col02:  11111111111111111111111111111111111111111111111111111111111111111111111111111111
+.
+.
+.
+\end{verbatim}
+Here the mask bits are either 0 or 1 for each pixel.
+
+\subsection{ROC DACs}
+
+The DAC settings for each readout chip are stored in the class
+
+\begin{verbatim}
+class PixelDACSettings: public PixelConfigBase {
+
+ public:
+
+    PixelDACSettings(std::string filename);
+
+    PixelROCDACSettings getDACSettings(int ROCId) const;
+
+    //Generate the DAC settings
+    void generateConfiguration(PixelFECConfigInterface* pixelFEC,
+	                       PixelNameTranslation* trans) const; 
+
+    void writeBinary(std::string filename) const;
+
+    void writeASCII(std::string filename) const;
+
+    friend std::ostream& operator<<(std::ostream& s, const PixelDACSettings& mask);
+
+ private:
+
+    std::vector<PixelROCDACSettings> dacsettings_;   
+ 
+};
+
+\end{verbatim}
+The format for the DAC settings in the ASCII format is given by
+\begin{verbatim}
+ROC:           FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC1
+Vdd:           6
+Vana:          140
+Vsf:           128
+Vcomp:         15
+Vleak_comp:    0
+VrgPr:         0
+VallPr:        35
+VrgSh:         0
+VwllSh:        35
+VHldDel:       90
+Vtrim:         29
+VthrComp:      70
+VIbias_Bus:    30
+Vbias_sf:      6
+VoffsetOp:     30
+VIbiasOp:      115
+VoffsetRO:     100
+VIon:          115
+VIbias_PH:     90
+VIbias_DAC:    100
+VIbias_ROC:    160
+VIColOr:       99
+Vnpix:         0
+VsumCol:       0
+VCal:          80
+CalDel:        90
+WBC:           120
+ChipContReg:   0
+ROC:           FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC2
+Vdd:           6
+Vana:          140
+Vsf:           128
+.
+.
+.
+\end{verbatim}
+Where the file contains the DAC settings for all the ROCs in a given module.
+
+\subsection{PixelDetectorConfig}
+
+Specifies which components of the detector are used in the configuration.
+The level of configurability is the module (or in FPIX language 
+the panel). I.e. the
+components that are controlled by one TBM.
+
+The file format that we use to specify this format looks like:
+\begin{verbatim}
+FPix_BmI_D1_BLD1_PNL1
+FPix_BmI_D1_BLD1_PNL2
+.
+.
+.
+\end{verbatim}
+
+The format above is the 'old' format. After discussions with the
+database GUI developers we have decided to make this object
+specify the ROC and their status. All ROCs on a module have
+to be listed. Otherwise there is an internal inconsistency in
+the configuration. In addition to listing the ROC one can
+specify a status of the ROC. An example of the file is
+given below
+\begin{verbatim}
+Rocs:
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC0 
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC1 
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC2 off
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC3 
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC4 noAnalogSignal
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC5 
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC6 off noHits
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC7 
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC8 
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC9 
+\end{verbatim}
+The status words are explained in more detail in Sec.~\ref{sec:rocstatus}.
+
+The class {\tt PixelConfigurationVerifier} checks the internal
+consistency of the detector configuration. For instance, it checks
+that if any ROC on a FED channel is marked with {\tt noAnalogSignal},
+then the entire FED channel is similarly marked. Also, it ensures the
+consistency of the FED card with the detector configuration. If an
+entire FED channel is marked as {\tt noAnalogSignal}, then the
+corresponding FED channel is automatically disabled. Similarly, if a
+FED channel is disabled in the FED card, but enabled in the detector
+configuration, then the FED card is dynamically modified to conform to
+the detector configuration. In this way the the detector configuration
+is the ``master'' flag for what parts of the detector are included in
+the configuration.
+
+{\em We should check if the detector configuration currently controls
+which portcard devices are initialized. Ideally if a portcard is not
+used, then it should not be initialized during the configuration.}
+
+
+\subsection{PixelROCStatus}
+\label{sec:rocstatus}
+The {\tt PixelROCStatus} class is used to store the status
+of ROCs. The default assumption is that a ROC is working and
+is on. However, we are likely to have problems with some ROCs
+given the number of components we have. This structure should
+allow us to add new failure modes as we discover new 
+problems. An example of the data would look like
+\begin{verbatim}
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC2 noHits
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC7 off
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC8 off noHits
+\end{verbatim}
+
+The different status flags that we can set are:
+\begin{itemize}
+\item {\tt noHits} indicates that we can not generate hits on the ROC.
+      For example this means that the ROC can not be calibrated
+      e.g. for address levels. However, it is not preventing us from
+      doing the UB equalization. In principle this flag should be
+      handled on a calibration-by-calibration basis, but at the moment
+      it is ignored.
+\item {\tt off} indicates that the ROC is disabled via a control bit on the ROC.
+                It is not used in any calibration and will not generate hits.
+                However, even it a ROC is {\tt off} it will be
+                configured. Presently the use of this flag is not implemented (it is ignored by the code).
+\item {\tt noInit} indicates that the ROCs in a module should not be included in the configuration.
+		This is implemented.
+\item {\tt noAnalogSignal}  indicates that the ROC can configured, but that something in the analog readout is broken. The ROC is included in the configuration but excluded from calibrations. This is implemented, and the corresponding FED channel is automatically disabled.
+\end{itemize}
+With the file-based configuration, we can set more than one of these
+flags at once. (Likely one would implement this as a bitmap.) However,
+the database configuration does not allow more than one flag
+to be set at a time.
+
+
+\subsection{PixelNameTranslation}
+
+This class generates the translation between the names used in the 
+naming document and the hardware addresses. This includes both the
+FEC and the FED.
+
+The data format used for the name translation is given by:
+{\tiny
+\begin{verbatim}
+# name                          TBMchannel  FEC      mfec  mfecchannel hubaddress portadd rocid     FED     channel     roc#
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC0      A       1        8        1          31        0       0        1         12        0
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC1      A       1        8        1          31        0       1        1         12        1
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC2      A       1        8        1          31        0       2        1         12        2
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC3      A       1        8        1          31        0       3        1         12        3
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC4      A       1        8        1          31        0       4        1         12        4
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC5      A       1        8        1          31        0       5        1         12        5
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC6      A       1        8        1          31        0       6        1         12        6
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC7      A       1        8        1          31        0       7        1         12        7
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC8      A       1        8        1          31        0       8        1         12        8
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC9      A       1        8        1          31        0       9        1         12        9
+\end{verbatim}
+}
+The name translation allows us to map the ROC name to the hardware addresses
+used in the configuration.
+
+\subsection{PixelFECConfig}
+
+This class specifies the location of the pixel FECs. This
+basically gives the VME base address to use. An arbitrary FEC
+number is used here. {\it is this specified in the naming
+convention document?} Also we refer to the crate number here. 
+There will be one PixelFECSupervisor per crate. How is this
+number identified? The PixelFECSupervisor is initialized
+with a crate number and will control the FEC cards that are 
+in the crate.
+
+The file format that we have to store this information looks like
+\begin{verbatim}
+#FEC number     crate     vme base address
+1               1         0x80000000
+\end{verbatim}
+Each FEC is identified by a number. The FEC is identified by the 
+crate and base address.
+
+
+\subsection{PixelTKFECConfig}
+
+This class specifies the location of the tracker FECs in
+the system. This
+specifies the VME slot and crate used for each TKFEC board. An arbitrary TKFEC
+ID string is used here. {\it is this specified in the naming
+convention document?}
+There will be one PixelTKFECSupervisor per crate. 
+The PixelTKFECSupervisor is initialized
+with a crate number and will control the TKFEC cards that are 
+in the crate.
+
+The file format that we have to store this information looks like
+\begin{verbatim}
+#TKFEC ID     crate     VME/PCI    slot/address
+tkfec1          1                     0x1c
+\end{verbatim}
+Each TKFEC is identified by an ID string. (Currently this string
+is arbitrary but we should use an agreed upon convention.)
+
+Optionally, to use a PCI TKFEC, the string ``PCI" may be added between
+the crate number and slot number.  ``VME" may also be specified.  If this
+parameter is not specified, it defaults to VME.
+
+
+\subsection{PixelFEDConfig}
+
+This specifies how the FEDs are configured. This includes the FED
+number and the VME base address. The FED number is the same as
+the FED id in the Slink data. Each PixelFEDSupervisor is initialized
+with a crate number corresponding to the crate it controls.
+
+The file format that we have to store this information looks like
+\begin{verbatim}
+#FED number     crate     vme base address
+1               1         0x1c000000
+\end{verbatim}
+Each FED is identified by a number, this is the same number as 
+the FED id in the raw data. The FED is identified by the 
+crate and base address. For now the crate is identified by an
+arbitrary number. {\it Should this be changed to the 
+actual name of the crate?}
+
+
+
+
+\subsection{PixelCalibConfiguration}
+
+This class was formerly known as PixelCalib, but was renamed after
+it was moved to the CMSSW repository in order to make it more
+consistent with offline conventions.
+This class incorporates information about how a calibration
+is executed. In particular it handles calibrations where 
+groups of pixels have charge injects. It specifies how we loop over pixels
+and pulse the detector in a calibration. The class is also
+used in the offline in order to analyze the calibration data,
+so that we know what event had what charge injected and what
+pixel were expected to be hit. 
+
+Below is an example of this file:
+\begin{verbatim}
+Mode: ThresholdCalDelay
+Rows:
+10 | 20 
+Cols:
+10 | 20
+VcalHigh
+Scan: VcThr 0 255 8
+Scan: CalDel 0 255 8
+Set: Vcal 50
+Repeat: 10
+Rocs:
+FPix_BmI_D1_BLD1_PNL1_PLQ1_ROC0
+FPix_BmI_D1_BLD1_PNL1_PLQ1_ROC1
+FPix_BmI_D1_BLD1_PNL1_PLQ2_ROC0
+FPix_BmI_D1_BLD1_PNL1_PLQ2_ROC1
+.
+.
+.
+\end{verbatim}
+
+The {\tt Scan} statement allows you to specify that
+you want to scan the settings of a dac parameter in a 
+range, above starting at 0 and incrementing in steps of
+8 until it exceeds 255. In addition to this you can
+specify a non-uniform set of scan points using the
+following format
+\begin{verbatim}
+ScanValues: Vcal 10 20 30 35 40 42 44 46 48 50 
+                 52 54 56 58 60 65 70 80 90 100 -1
+\end{verbatim}
+The {\tt -1} 
+
+Arbitrary parameters may be specified just before the ``Rows:" line.
+For example,
+\begin{verbatim}
+Mode:  AOHBias
+Parameters:
+TargetBMin     412
+TargetBMax     612
+printFEDRawData             no
+printFEDOffsetAdjustments   no
+printAOHBiasAdjustments     no
+Rows:
+.
+.
+.
+\end{verbatim}
+These parameters are accessible in the calibration code.  Each calibration
+may look for particular parameters to control its operation.  Parameters
+not defined for a particular calibration are ignored.
+
+In particular the parameter ``ScanMode'' can be defined. It can take
+the three values of ``maskAllPixel'', ``useAllPixel'', and ``default''.
+In the default mode the trim and mask bits specified in the configuration 
+is used during the scan. Charge is injected according to the pattern
+and the pixels that are enabled in the configuration is used during
+the calibration. In the maskAllPixels mode all pixels are
+disabled before the first event. Then the pixels are enabled
+corresponding to the pixel mask and the pattern that has charged
+injected. I.e., only pixels that have charge injection and that
+are not disabled in the configuration will be enabled. The pixels
+use the trim bits from the configuration. In the useAllPixels mode
+all the pixels on the current pattern is enabled independently of
+what the mask bit is in the configuration if ScanMode is not 
+defined the mode useallPixels will be used.
+
+DACs to scan are selected with lines of the form.
+\begin{verbatim}
+Scan: [DAC name] [min scan value] [max scan value] [scan step size] [mix]
+\end{verbatim}
+The last parameter is optional.  If nothing is given here, then all ROCs will be set to the same DAC value at the same time.  If the word \verb|mix| is placed here (at the end of the line), then the ROCs on a particular channel will have not have the same DAC value at the same time.  Instead, the DAC values on different ROCs will be spread out to cover the entire range.  This is useful when scanning \verb|Vsf| or any other setting that affects the power drawn by the chip, as it prevents the ROCs from all drawing high power at the same time.
+
+The list of ROCs may be specified completely, or it may be auto-generated.  
+Auto-generation requires knowing which modules are in the configuration, and 
+which ROCs are on those modules.  Currently, this information is not 
+available in offline (i.e. CMSSW) code, so offline code must have the 
+ROC list specified completely.  To do this, the format is:
+\begin{verbatim}
+Rocs:
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC0
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC1
+.
+.
+.
+\end{verbatim}
+In online running, where this information is available, it is preferable 
+to use auto-generation.  To auto-generate the list, the first line should 
+be ``\verb|ToCalibrate:|" instead of ``\verb|Rocs:|".  (The user may 
+specify a complete ROC list with ``\verb|ToCalibrate:|".  Compared to 
+using ``\verb|Rocs:|", this has the advantage of not adding ROCs which 
+are not found in the configuration.  So it is always recommended to 
+use ``\verb|ToCalibrate:|" if possible.)
+
+Probably the most common thing is to just add all ROCs and modules in 
+the configuration. This simply requires the word \verb|all|:
+\begin{verbatim}
+ToCalibrate:
+all
+\end{verbatim}
+
+To specify, say, just 2 ROCs, use:
+\begin{verbatim}
+ToCalibrate:
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC0
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC1
+\end{verbatim}
+
+To specify, say, all the ROCs on just two modules, use:
+\begin{verbatim}
+FPix_BpI_D1_BLD1_PNL1
+FPix_BpI_D1_BLD1_PNL2
+\end{verbatim}
+(The ROCs on each module are obtained from the name translation.)
+
+You can mix and match ROCs and modules:
+\begin{verbatim}
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC0
+FPix_BpI_D1_BLD1_PNL2
+\end{verbatim}
+
+You can also exclude particular ROCs and modules by adding them with a 
+minus sign in front (separated by whitespace):
+\begin{verbatim}
+ToCalibrate:
+all
+- FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC0
+- FPix_BpI_D1_BLD1_PNL2
+\end{verbatim}
+This fills the ROC list with all ROCs in the configuration, except 
+for \verb|FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC0| and for all the ROCs 
+in \verb|FPix_BpI_D1_BLD1_PNL2|.
+
+For another example:
+\begin{verbatim}
+ToCalibrate:
+FPix_BpI_D1_BLD1_PNL1
+- FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC0
+\end{verbatim}
+This adds all ROCs on \verb|FPix_BpI_D1_BLD1_PNL1| except 
+for \verb|FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC0|.
+
+You may optionally add a ``\verb|+|" in front of things that 
+you're adding. (If no ``\verb|+|" or ``\verb|-|" is seen, ``\verb|+|" is 
+assumed.)
+\begin{verbatim}
+ToCalibrate:
++ all
+- FPix_BpI_D1_BLD1_PNL1
++ FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC0
+\end{verbatim}
+This adds all ROCs on all modules, except 
+for \verb|FPix_BpI_D1_BLD1_PNL1|, on which 
+only \verb|FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC0| is added.
+
+Note that the order matters. The following:
+\begin{verbatim}
+ToCalibrate:
++ all
++ FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC0
+- FPix_BpI_D1_BLD1_PNL1
+\end{verbatim}
+would not include \verb|FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC0| in the 
+ROC list, because it is later removed by the 
+removal of \verb|FPix_BpI_D1_BLD1_PNL1|.
+
+(For completeness, even though it's completely useless, you 
+can use ``\verb|- all|" to clear the ROC list.)
+
+The auto-generated ROC list only adds ROCs on modules 
+given in the \verb|PixelDetectorConfig|.
+
+\subsection{PixelFedCard}
+
+The {\tt PixelFEDCard} class contains the settings for a FED board.
+The file is fairly long and I do not include an example here. 
+You can find a sample file in PixelFEDInterface/test/params\_fed.dat 
+{\it There is some information on the PixelFEDCard that is 
+redundant with the PixelFEDConfig like the VME base address. We
+should only specify this in one location.}
+
+\subsection{PixelTBMSettings}
+
+This class holds the settings used by the TBM. The file contains the
+module name and gain settings as well as if the TBM should be
+configured in 'SingleMode' or 'DualMode'. 
+
+The format used for this information is given by
+\begin{verbatim}
+FPix_BpI_D1_BLD1_PNL1_PLQ2_ROC1
+AnalogInputBias: 160
+AnalogOutputBias: 110
+AnalogOutputGain: 207
+Mode: SingleMode
+\end{verbatim}
+{\it Note that the name here should be a module name and not contain
+the plaquette and ROC number. We now have a 'PixelModuleName' class
+that we should use here.}
+
+
+\subsection{PixelPortcardMap}
+
+This class lists the portcards used in the configuration
+and which fed channels are on which AOH.
+
+The format of this information is illustrated by the file:
+\begin{verbatim}
+# PortcardName       Module                AOH channel
+FPix_BpI_D1_PRT2    FPix_BpI_D1_PNL4 A     1
+FPix_BpI_D1_PRT2    FPix_BpI_D1_PNL5 A     2
+\end{verbatim}
+For each portcard the modules are listed and the corresponding
+AOH channel is listed.  The TBM channel, ``\verb|A|" or ``\verb|B|", is
+specified after the module name.  (If no TBM channel is specified, it
+defaults to ``\verb|A|".)
+
+The AOH channel numbering begins from 1.  On each forward pixel port card, there is one AOH with 6 channels, so the numbering goes from 1 to 6.  On barrel supply boards, there are 4 AOHs, each with 6 channels.  The numbering goes from 1 to 24.  The first AOH contains channels 1-6, the second contains channels 7-12, etc.
+
+
+\subsection{PixelPortCardConfig}
+
+This class holds the settings that are used on
+each portcard.
+
+The format of the portcard configuration file is
+\begin{verbatim}
+Name: FPix_BpI_D1_PRT1
+TKFECID: tkfec1
+ringAddress: 0x8
+ccuAddress: 0x7d
+channelAddress: 0x10
+i2cSpeed: 0x64
+Delay25_GCR: 0x0
+Delay25_SCL: 0x60
+Delay25_TRG: 0x68
+Delay25_SDA: 0x5c
+Delay25_RCL: 0x60
+Delay25_RDA: 0x60
+AOH_Bias1: 0x19
+AOH_Bias2: 0x1f
+AOH_Bias3: 0x1f
+AOH_Bias4: 0x1f
+AOH_Bias5: 0x1f
+AOH_Bias6: 0x1f
+AOH_Gain1: 0x2
+AOH_Gain2: 0x0
+AOH_Gain3: 0x0
+AOH_Gain4: 0x0
+AOH_Gain5: 0x0
+AOH_Gain6: 0x0
+\end{verbatim}
+In the barrel, there are 4 AOH devices, denoted \verb|AOH1|, \verb|AOH2|, \verb|AOH3|, and \verb|AOH4|.  Each of these 4 devices has 6 channels, each with its own bias and gain.  For example, \verb|AOH1_Bias1|, \verb|AOH1_Gain5|, \verb|AOH2_Bias3|, \verb|AOH4_Gain6|.
+
+In addition, values may be specified for the settings \verb|PLL_CTR1|, \verb|PLL_CTR2|, \verb|PLL_CTR3|, \verb|PLL_CTR4or5|, \verb|PLL_CTR4|, \verb|PLL_CTR5|, \verb|DOH_Ch0Bias_CLK|, \verb|DOH_Dummy|, \verb|DOH_Ch1Bias_Data|, and \verb|DOH_Gain_SEU|.  The settings \verb|PLL_CTR4or5|, \verb|PLL_CTR4|, and \verb|PLL_CTR5| are a special case.  \verb|PLL_CTR4or5| is the actual address that may be written.  If bit 5 of \verb|PLL_CTR2| is set to zero, this address writes to \verb|PLL_CTR4|; if that bit is set to one, this address writes to \verb|PLL_CTR5|.  When \verb|PLL_CTR4| or \verb|PLL_CTR5| is used in the configuration file, this bit will be automatically set correctly without needing to manually specify a setting for \verb|PLL_CTR2|.  It is recommended to use this feature, instead of using \verb|PLL_CTR4or5|.
+
+Prior to loading the settings in the file, an initialization sequence is sent to the port card:
+\begin{verbatim}
+PLL_CTR1:    0x8
+PLL_CTR1:    0x0
+PLL_CTR2:    0x20
+PLL_CTR4or5: 0x15
+DOH_Dummy:   0x0
+\end{verbatim}
+Then the device settings in the file (all lines after \verb|i2cSpeed: 0x64|) are loaded in the order given.
+
+\subsection{PixelDelay25Calibration}
+
+This class specifies the parameters used in the delay 25 scan
+for the delay settings of return data and send data. An
+example of the configuration files used for this calibration
+is given below
+
+\begin{verbatim}
+Mode:
+Delay25
+Portcards:
+FPix_BmI_D1_PRT2
+AllModules:
+0
+OrigSDa:
+64
+OrigRDa:
+64
+Range:
+64
+GridSize:
+8
+Tests:
+10
+StableRange:
+6
+StableShape:
+2
+\end{verbatim}
+
+
+\subsection{PixelGlobalDelay25}
+
+The PixelGlobalDelay25 is a class that contains one global
+delay setting that delays the signal in delay25 chip for the
+clock and data. In the FED it adds the same delay such that
+the digitization works independently of the delay setting
+in the global delay.
+
+The format of this file is very simple, it is just one single
+number in hex
+\begin{verbatim}
+0x10
+\end{verbatim}
+The delay specified here is in units of 0.499 ns. This 
+corresponds to the steps of the delay in the delay 25 chip.
+
