@@ -30,22 +30,29 @@ In the pixel online software the code is distributed
 among a number of packages. These packages are listed
 here.
 \begin{itemize}
-\item PixelCalibrations
-%\item PixelCalibrationInterface
 \item CalibFormats/SiPixelObjects
+\item doc
+\item JobControl
+\item PixelAnalysisTools
+\item PixelCalibrations
+\item PixelConfigDataExamples
+\item PixelConfigDBGUI
 \item PixelConfigDBInterface
-%\item PixelDCSSupervisor
 \item PixelDCSInterface
 \item PixelFECInterface
 \item PixelFECSupervisor
 \item PixelFEDInterface
+\item PixelFEDMonitor
 \item PixelFEDSupervisor
-\item PixelFunctionManager
-\item PixelLTCSupervisor
+\item PixelHistoViewer
+\item PixelMonitor
+\item PixelRun
 \item PixelSupervisor
+\item PixelSupervisorConfiguration
+\item PixelTCDSSupervisor
 \item PixelTKFECSupervisor
-\item PixelTTCSupervisor\footnote{In use through tag {\tt POS\_3\_1\_2}; deprecated starting in {\tt POS\_3\_2\_0}.}
 \item PixelUtilities
+\item XDAQConfiguration
 \end{itemize}
 The package dependency tree is shown in Fig~\ref{fig:dependencies}.
 The supervisor applications are at the top and depend on the
@@ -62,6 +69,45 @@ out some piece of code into a separate package.)
 At top are the supervisor applications. }
 \label{fig:dependencies}
 \end{figure}
+
+\subsection{CalibFormats/SiPixelObjects}
+
+\subsection{doc}
+
+\subsection{JobControl}
+
+\subsection{PixelAnalysisTools}
+
+\subsection{PixelCalibrations}
+
+\subsection{PixelConfigDataExamples}
+
+\subsection{PixelConfigDBGUI}
+
+\subsection{PixelConfigDBInterface}
+
+\subsection{PixelDCSInterface}
+
+\subsection{PixelFECInterface}
+
+\subsection{PixelFECSupervisor}
+The FEC Supervisor controls the pixel FECs. This means it is
+responsible for loading the configuration parameters for the ROCs from
+the configuration database and programming those parameters into the
+detector.
+
+\subsection{PixelFEDInterface}
+
+\subsection{PixelFEDMonitor}
+
+\subsection{PixelFEDSupervisor}
+The FED Supervisor controls and monitors the pixel FEDs.
+
+\subsection{PixelHistoViewer}
+
+\subsection{PixelMonitor}
+
+\subsection{PixelRun}
 
 \subsection{PixelSupervisor}
 The PixelSupervisor is the top level xdaq application
@@ -94,20 +140,19 @@ the POS xdaq processes has crashed, or whether any of the JobControl
 processes themselves are unresponsive. (Note that we typically only
 run JobControl at P5, so this feature is not available elsewhere.)
 
-\subsection{PixelFECSupervisor}
-The FEC Supervisor controls the pixel FECs. This means it is
-responsible for loading the configuration parameters for the ROCs from
-the configuration database and programming those parameters into the
-detector.
+\subsection{PixelSupervisorConfiguration}
 
-\subsection{PixelFEDSupervisor}
-The FED Supervisor controls and monitors the pixel FEDs.
+\subsection{PixelTCDSSupervisor}
 
 \subsection{PixelTKFECSupervisor}
 The PixelTKFECSupervisor controls the tracker FEC hardware. The
 pixel system uses the tracker FEC hardware slow I2C to
 initialize the fast I2C used for the download of most 
 configuration data.
+
+\subsection{PixelUtilities}
+
+\subsection{XDAQConfiguration}
 
 \subsection{PixelTTCSupervisor}
 The PixelTTCSupervisor controls the pixel TTC module used for trigger
